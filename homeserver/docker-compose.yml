@@ -25,6 +25,9 @@ services:
       ALERT_COUNTDOWN_MIN: ${ALERT_COUNTDOWN_MIN:-15}
       ALERT_GRACE_MIN: ${ALERT_GRACE_MIN:-10}
       WRITE_TOKEN: ${WRITE_TOKEN:-}
+      # Optional plain-text card, refreshed every 15 s, e.g. https://dadjokes736.com
+      TEXT_FEED_URL: ${TEXT_FEED_URL:-}
+      TEXT_FEED_TITLE: ${TEXT_FEED_TITLE:-}
     volumes:
       - frame-data:/data
 

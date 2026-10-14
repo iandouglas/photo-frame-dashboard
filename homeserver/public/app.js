@@ -4,14 +4,16 @@
   'use strict';
   var L = window.Logic;
   var MIN = 60000;
-  var POLL_EVENTS = 60000, POLL_STATE = 10000, POLL_WEATHER = 10 * MIN;
+  var POLL_EVENTS = 60000, POLL_STATE = 10000, POLL_WEATHER = 10 * MIN, POLL_TEXT = 15000;
+  var HOURLY_IDLE = MIN; // the hourly view returns to the 10-day list after this long untouched
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
   var S = {
     skew: 0, offsets: [[0, 0]], calendars: [], calById: {}, alertCals: {}, alertOpts: null,
     events: [], status: [], weather: null, pomodoro: null, acks: {},
-    online: true, agendaMinute: -1, lastAlertKey: null, pomoDoneShown: null, editing: null
+    online: true, agendaMinute: -1, lastAlertKey: null, pomoDoneShown: null, editing: null,
+    wxDay: null, wxTouched: 0, text: null
   };
   var token = (/[?&]token=([^&]+)/.exec(location.search) || [])[1] || '';
 
@@ -217,21 +219,109 @@
     var today = w.days[0] || {};
     $('sun').innerHTML = '<span>' + icon('sunrise', 22) + hm12(today.sunrise) + '</span><span>' + icon('sunset', 22) + hm12(today.sunset) + '</span>';
 
+    // A poll must not throw the user out of the hourly view (or reset its scroll position).
+    if (S.wxDay) return;
+    renderDays();
+  }
+
+  function dayName(date, index, short) {
+    if (index === 0) return 'Today';
+    var parts = date.split('-');
+    var name = DAYS[new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2])).getUTCDay()];
+    return short ? name.slice(0, 3) : name;
+  }
+
+  function renderDays() {
+    var w = S.weather;
+    if (!w) return;
     var lo = Infinity, hi = -Infinity, i;
     for (i = 0; i < w.days.length; i++) { lo = Math.min(lo, w.days[i].lo); hi = Math.max(hi, w.days[i].hi); }
     var span = Math.max(1, hi - lo), html = '';
     for (i = 0; i < w.days.length; i++) {
       var d = w.days[i];
-      var parts = d.date.split('-');
-      var dow = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2])).getUTCDay();
       var left = (d.lo - lo) / span * 100, width = Math.max(4, (d.hi - d.lo) / span * 100);
-      html += '<div class="wx-day"><span class="d">' + (i === 0 ? 'Today' : DAYS[dow].slice(0, 3)) + '</span>' +
+      html += '<div class="wx-day" data-date="' + esc(d.date) + '"><span class="d">' + dayName(d.date, i, true) + '</span>' +
         '<span class="i">' + icon(d.icon, 26) + '</span>' +
         '<span class="p">' + (d.pop ? d.pop + '%' : '') + '</span>' +
         '<span class="lo">' + d.lo + '°</span><span class="range"><i style="left:' + left + '%;width:' + width + '%"></i></span>' +
         '<span class="hi">' + d.hi + '°</span></div>';
     }
-    $('wxDays').innerHTML = html;
+    var box = $('wxDays');
+    box.className = 'wx-days';
+    box.innerHTML = html;
+  }
+
+  function hourLabel(t) {
+    var h = +t.slice(0, 2);
+    return (h % 12 || 12) + ' ' + (h >= 12 ? 'PM' : 'AM');
+  }
+
+  // Hourly breakdown for one day, in the same panel as the 10-day list.
+  function openHourly(date) {
+    var w = S.weather, day = null, index = -1, i;
+    if (!w) return;
+    for (i = 0; i < w.days.length; i++) if (w.days[i].date === date) { day = w.days[i]; index = i; }
+    if (!day) return closeHourly();
+    S.wxDay = date;
+    S.wxTouched = Date.now();
+
+    var hours = day.hours || [], rows = '';
+    // Today: start at the current hour in the server's zone.
+    var nowWall = wall(now()), nowHour = pad2(nowWall.getUTCHours()) + ':00';
+    for (i = 0; i < hours.length; i++) {
+      var h = hours[i];
+      if (index === 0 && h.t < nowHour) continue;
+      rows += '<div class="wx-hour"><span class="h">' + (index === 0 && h.t === nowHour ? 'Now' : hourLabel(h.t)) + '</span>' +
+        '<span class="i">' + icon(h.icon, 26) + '</span>' +
+        '<span class="p">' + (h.pop ? h.pop + '%' : '') + '</span>' +
+        '<span class="t">' + (h.temp == null ? '--' : h.temp) + '°</span></div>';
+    }
+    var parts = date.split('-');
+    var box = $('wxDays');
+    box.className = 'wx-days is-hourly';
+    box.innerHTML = '<div class="wx-hhead"><button class="wx-back" data-act="wx-back" aria-label="Back to 10-day forecast">' +
+      '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>' +
+      '<b>' + dayName(date, index, false) + '</b><span>' + MONTHS[+parts[1] - 1].slice(0, 3) + ' ' + (+parts[2]) +
+      ' · ' + day.lo + '° / ' + day.hi + '°</span></div>' +
+      '<div class="wx-hours" id="wxHours">' + (rows || '<p class="empty">No hourly forecast yet</p>') + '</div>';
+  }
+
+  function closeHourly() {
+    if (!S.wxDay) return;
+    S.wxDay = null;
+    renderDays();
+  }
+
+  function onDaysTap(ev) {
+    S.wxTouched = Date.now();
+    var el = ev.target;
+    while (el && el !== this && !el.getAttribute('data-date') && !el.getAttribute('data-act')) el = el.parentNode;
+    if (!el || el === this) return;
+    if (el.getAttribute('data-act') === 'wx-back') return closeHourly();
+    if (!S.wxDay) openHourly(el.getAttribute('data-date'));
+  }
+
+  // ------------------------------------------------------------ text feed
+  function loadText() {
+    request('GET', 'api/text', null, function (err, d) {
+      var card = $('textCard');
+      if (err === 'NOT_CONFIGURED') { card.className = 'card text-card hidden'; return; }
+      if (d && d.title) { $('textTitle').textContent = d.title; $('textTitle').className = 'card-label'; }
+      if (err || !d || typeof d.text !== 'string') {
+        // Keep the last text; just mark it as old.
+        if (S.text !== null) $('textBody').className = textClass(S.text) + ' is-stale';
+        return;
+      }
+      card.className = 'card text-card';
+      var body = $('textBody');
+      if (d.text !== S.text) { S.text = d.text; body.textContent = d.text; }
+      body.className = textClass(d.text) + (d.stale ? ' is-stale' : '');
+    });
+  }
+  // Shrink the font for longer texts so they fit the card.
+  function textClass(t) {
+    var n = t.length;
+    return 'text-body' + (n > 360 ? ' is-xs' : n > 220 ? ' is-s' : n > 120 ? ' is-m' : '');
   }
 
   // ------------------------------------------------------------ meeting alert
@@ -367,6 +457,7 @@
     renderAlert();
     if (!S.editing) renderPomodoro();
     if (Math.floor(now() / MIN) !== S.agendaMinute) renderAgenda();
+    if (S.wxDay && Date.now() - S.wxTouched > HOURLY_IDLE) closeHourly();
   }
 
   // ------------------------------------------------------------ wire up
@@ -379,12 +470,18 @@
   $('pomoReset').addEventListener('click', function () { pomoAction('reset'); });
   $('pomoGear').addEventListener('click', function () { openSettings(!S.editing); });
   $('pomoSettings').addEventListener('click', onSettingsTap);
+  $('wxDays').addEventListener('click', onDaysTap);
+  // Any touch or scroll in the panel keeps the hourly view open.
+  $('wxDays').addEventListener('touchstart', function () { S.wxTouched = Date.now(); });
+  $('wxDays').addEventListener('scroll', function () { S.wxTouched = Date.now(); }, true);
 
   loadEvents();
   loadState();
   loadWeather();
+  loadText();
   setInterval(loadEvents, POLL_EVENTS);
   setInterval(loadState, POLL_STATE);
   setInterval(loadWeather, POLL_WEATHER);
+  setInterval(loadText, POLL_TEXT);
   setInterval(tick, 1000);
 })();

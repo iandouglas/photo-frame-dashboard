@@ -59,6 +59,19 @@ export function parseCalendars(json) {
   });
 }
 
+/** Optional plain-text card. Unset URL = card hidden. */
+export function parseTextFeed(url, title) {
+  if (!url) return null;
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new Error('TEXT_FEED_URL is not a valid URL');
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('TEXT_FEED_URL must be http or https');
+  return { url: u.toString(), title: String(title || '').slice(0, 40) };
+}
+
 export function loadConfig() {
   const tz = process.env.TZ || 'UTC';
   if (!isValidZone(tz)) throw new Error(`TZ "${tz}" is not a known time zone`);
@@ -89,5 +102,6 @@ export function loadConfig() {
     },
     stateFile: process.env.STATE_FILE || './data/state.json',
     writeToken: process.env.WRITE_TOKEN || '',
+    textFeed: parseTextFeed(process.env.TEXT_FEED_URL, process.env.TEXT_FEED_TITLE),
   };
 }

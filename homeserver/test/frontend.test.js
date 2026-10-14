@@ -28,3 +28,9 @@ test('stylesheet avoids CSS the old WebView rejects', () => {
   const banned = [/var\(--/, /--[a-z-]+\s*:/, /:has\(/, /oklch\(/, /color-mix\(/, /display:\s*grid/, /\bgap\s*:/, /\binset\s*:/, /#[0-9a-fA-F]{4}\b/, /#[0-9a-fA-F]{8}\b/];
   for (const re of banned) assert.ok(!re.test(css), `style.css matches ${re}`);
 });
+
+test('the text card is filled with textContent, never innerHTML', () => {
+  const src = readFileSync(new URL('app.js', dir), 'utf8');
+  assert.match(src, /body\.textContent = d\.text/);
+  assert.ok(!/innerHTML[^;]*\bd\.text\b/.test(src), 'feed text must not reach innerHTML');
+});
