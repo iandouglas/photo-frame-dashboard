@@ -1,0 +1,31 @@
+# Frame dashboard for the home NAS. Paste into Portainer → Stacks → Add stack → Web editor,
+# and set the environment variables (at least CALENDARS) in the stack's "Environment variables".
+# Docker builds the image on the NAS straight from GitHub, so it matches the NAS's CPU.
+services:
+  frame:
+    build:
+      context: https://github.com/iandouglas/photo-frame-dashboard.git#main:homeserver
+    image: frame-homeserver:local
+    container_name: frame-homeserver
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8088}:8080"
+    environment:
+      TZ: ${TZ:-UTC}
+      LAT: ${LAT:-}
+      LON: ${LON:-}
+      LOCATION_NAME: ${LOCATION_NAME:-}
+      UNITS: ${UNITS:-imperial}
+      # JSON array of calendars. The url values are secret iCal addresses: treat them as passwords.
+      CALENDARS: ${CALENDARS:-[]}
+      REFRESH_MINUTES: ${REFRESH_MINUTES:-5}
+      EVENTS_DAYS: ${EVENTS_DAYS:-14}
+      ALERT_LEAD_MIN: ${ALERT_LEAD_MIN:-2}
+      ALERT_COUNTDOWN_MIN: ${ALERT_COUNTDOWN_MIN:-15}
+      ALERT_GRACE_MIN: ${ALERT_GRACE_MIN:-10}
+      WRITE_TOKEN: ${WRITE_TOKEN:-}
+    volumes:
+      - frame-data:/data
+
+volumes:
+  frame-data:

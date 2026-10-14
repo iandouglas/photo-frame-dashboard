@@ -20,3 +20,6 @@ scripts/si006-webview-overlay/build/
 
 # Private per-frame records (docs/frame-records.md). No trailing slash, so a symlink is ignored too.
 /frames
+
+# Local scratch space (agents: never use the system /tmp).
+/tmp/
