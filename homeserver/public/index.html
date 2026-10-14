@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1280, initial-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#F2EEE6">
+  <title>Frame</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="stage">
+    <section class="col col-agenda">
+      <header class="col-head">
+        <h2>Agenda</h2>
+        <div class="legend" id="legend"></div>
+      </header>
+      <div class="agenda" id="agenda"><p class="empty">Loading calendars…</p></div>
+      <div class="status" id="calStatus"></div>
+    </section>
+
+    <section class="col col-now">
+      <div class="clock" id="clock">--:--</div>
+      <div class="date" id="date"></div>
+      <div class="wx-now" id="wxNow"></div>
+      <div class="sun" id="sun"></div>
+      <div class="wx-days" id="wxDays"></div>
+    </section>
+
+    <section class="col col-tools">
+      <div class="card alert-card" id="alertCard">
+        <div class="card-label">Next meeting</div>
+        <div id="alertBody"><p class="empty">Nothing coming up</p></div>
+      </div>
+
+      <div class="card pomo" id="pomo">
+        <div class="card-label"><span>Pomodoro</span><button class="link" id="pomoGear" aria-label="Pomodoro settings">Settings</button></div>
+        <div id="pomoMain">
+          <div class="pomo-phase" id="pomoPhase">Focus</div>
+          <div class="pomo-time" id="pomoTime">25:00</div>
+          <div class="bar"><div class="bar-fill" id="pomoBar"></div></div>
+          <div class="pomo-count" id="pomoCount"></div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="pomoStart">Start</button>
+            <button class="btn" id="pomoSkip">Skip</button>
+            <button class="btn" id="pomoReset">Reset</button>
+          </div>
+        </div>
+        <div id="pomoSettings" class="pomo-settings hidden"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="flash hidden" id="flash" role="alertdialog" aria-live="assertive">
+    <div class="flash-inner">
+      <div class="flash-when" id="flashWhen"></div>
+      <div class="flash-title" id="flashTitle"></div>
+      <div class="flash-meta" id="flashMeta"></div>
+      <button class="ack" id="ack">ACK</button>
+    </div>
+  </div>
+
+  <div class="offline hidden" id="offline">Can't reach the server — showing the last data</div>
+
+  <script src="logic.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

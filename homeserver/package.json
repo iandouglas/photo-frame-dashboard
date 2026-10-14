@@ -1,0 +1,19 @@
+{
+  "name": "frame-homeserver",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Self-hosted LAN dashboard for the PF1007 frame: Google Calendar iCal feeds, Open-Meteo weather, pomodoro, meeting alerts.",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ical.js": "2.2.1"
+  },
+  "devDependencies": {
+    "acorn": "8.19.0"
+  }
+}
