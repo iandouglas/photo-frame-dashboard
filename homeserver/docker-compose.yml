@@ -1,10 +1,11 @@
-# Frame dashboard for the home NAS. Paste into Portainer → Stacks → Add stack → Web editor,
-# and set the environment variables (at least CALENDARS) in the stack's "Environment variables".
-# Docker builds the image on the NAS straight from GitHub, so it matches the NAS's CPU.
+# Frame dashboard for the home NAS. Deploy with Portainer → Stacks → Add stack → Repository,
+# compose path homeserver/docker-compose.yml, and set the environment variables (at least CALENDARS).
+# Portainer clones the repo with its own git, so the NAS's Docker needs no git; the image is
+# built on the NAS from this folder, so it matches the NAS's CPU. Also works with `docker compose up`.
 services:
   frame:
     build:
-      context: https://github.com/iandouglas/photo-frame-dashboard.git#main:homeserver
+      context: .
     image: frame-homeserver:local
     container_name: frame-homeserver
     restart: unless-stopped

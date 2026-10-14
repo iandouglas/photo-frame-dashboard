@@ -46,9 +46,14 @@ in to Google on its own.
 
 ## 2. Deploy on the NAS with Portainer
 
-1. **Stacks → Add stack**, name it `frame`, choose **Web editor**, and paste
-   [`docker-compose.yml`](docker-compose.yml). Docker builds the image on the NAS from this
-   repository's `main` branch, so merge this code first (or change `#main` to your branch).
+1. **Stacks → Add stack**, name it `frame`, and choose **Repository**:
+   - Repository URL: this repository's GitHub URL (it is public, so no authentication)
+   - Repository reference: `refs/heads/main`
+   - Compose path: `homeserver/docker-compose.yml`
+
+   Portainer clones the repository with its own git and builds the image on the NAS from
+   `homeserver/`. The **Web editor** mode does not work here: it has no files to build from, and
+   many NAS Docker installs have no `git` to fetch them (`git: executable file not found`).
 2. Under **Environment variables**, add at least `CALENDARS`. The value is one line of JSON:
 
    ```json
@@ -72,6 +77,7 @@ in to Google on its own.
    logged or shown.
 
 To change a setting later, edit the stack's environment variables and click **Update the stack**.
+To pick up new code, open the stack and use **Pull and redeploy**.
 Pomodoro settings and ACKs are kept in the `frame-data` volume.
 
 Other settings, all optional: `HOST_PORT` (8088), `TZ`, `LAT`/`LON`/`LOCATION_NAME` (no default; weather stays off until set),
