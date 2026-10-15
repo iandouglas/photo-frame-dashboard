@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Embedded into the frame-push binary by install.sh, so macOS can show the Calendar prompt and
+     remember the permission for this tool. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>io.github.photo-frame-dashboard.frame-push</string>
+  <key>CFBundleName</key>
+  <string>frame-push</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>frame-push sends the titles and times of the calendars you chose to your photo frame's home server.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>frame-push sends the titles and times of the calendars you chose to your photo frame's home server.</string>
+</dict>
+</plist>

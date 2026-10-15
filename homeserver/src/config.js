@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { isValidZone } from './tz.js';
 import { parseNewsFeeds } from './news.js';
+import { parsePushCalendars } from './push.js';
 
 const DEFAULT_COLORS = ['#3B6FD8', '#00A36C', '#C2410C', '#7C3AED', '#DB2777', '#0E7490'];
 
@@ -100,6 +101,8 @@ export function loadConfig() {
   let calendarsJson = process.env.CALENDARS || '[]';
   if (process.env.CALENDARS_FILE) calendarsJson = readFileSync(process.env.CALENDARS_FILE, 'utf8');
 
+  const calendars = parseCalendars(calendarsJson);
+
   const units = process.env.UNITS || 'imperial';
   if (units !== 'imperial' && units !== 'metric') throw new Error('UNITS must be imperial or metric');
 
@@ -112,7 +115,10 @@ export function loadConfig() {
     lon: num('LON', null, -180, 180),
     locationName: process.env.LOCATION_NAME || '',
     units,
-    calendars: parseCalendars(calendarsJson),
+    calendars,
+    // Calendars pushed by a laptop (homeserver/push-macos); ids share one namespace with CALENDARS.
+    pushCalendars: parsePushCalendars(process.env.PUSH_CALENDARS, calendars.map((c) => c.id)),
+    pushStaleMinutes: num('PUSH_STALE_MINUTES', 60, 5, 10080),
     refreshMinutes: num('REFRESH_MINUTES', 5, 1, 1440),
     eventsDays: num('EVENTS_DAYS', 14, 1, 60),
     weatherMinutes: num('WEATHER_MINUTES', 15, 5, 1440),

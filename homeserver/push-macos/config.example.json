@@ -1,0 +1,10 @@
+{
+  "server": "http://NAS-IP:8088",
+  "pushId": "work",
+  "calendars": ["PASTE-CALENDAR-IDENTIFIER-FROM---list-calendars"],
+  "daysAhead": 14,
+  "daysBack": 1,
+  "busyOnly": false,
+  "exclude": ["^OOO", "^Focus time$"],
+  "skipDeclined": true
+}

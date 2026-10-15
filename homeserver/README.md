@@ -76,8 +76,8 @@ What still works without it:
   shows no secret address for those. So this helps only if your company lets the work account
   produce its own secret address, or if you mirror the events some other way.
 - If you do get a work feed in, add `"busyOnly": true` to show "Busy" instead of titles.
-- Otherwise, a small script on the work laptop that pushes busy times to the server would be the
-  way; that isn't part of this project yet.
+- Otherwise, push it from the laptop that already shows it in the macOS Calendar app: see
+  [Work calendar from a Mac](#work-calendar-from-a-mac-push).
 
 ### Put them into Portainer
 
@@ -140,7 +140,8 @@ Other settings, all optional: `HOST_PORT` (8088), `TZ`, `LAT`/`LON`/`LOCATION_NA
 `UNITS` (`imperial` or `metric`), `REFRESH_MINUTES` (5), `EVENTS_DAYS` (14), `ALERT_LEAD_MIN` (2),
 `ALERT_COUNTDOWN_MIN` (15), `ALERT_GRACE_MIN` (10), `WRITE_TOKEN` (see below), `TEXT_FEED_URL`
 and `TEXT_FEED_TITLE` (no default; the text card stays hidden until set), `NEWS_FEEDS` and
-`NEWS_MINUTES` (see below), `SCREEN_OFF_FROM`, `SCREEN_OFF_TO` and `WAKE_MINUTES` (see
+`NEWS_MINUTES` (see below), `PUSH_CALENDARS` and `PUSH_STALE_MINUTES` (see
+[Work calendar from a Mac](#work-calendar-from-a-mac-push)), `SCREEN_OFF_FROM`, `SCREEN_OFF_TO` and `WAKE_MINUTES` (see
 [Screen off](#screen-off-night-schedule-and-settings)).
 
 ### News feeds
@@ -178,6 +179,66 @@ The kiosk allows plain HTTP, so the frame's missing HTTPS root certificates don'
 make the kiosk the frame's Home screen, see the [kiosk guide](../dashboard/kiosk/README.md#start-at-boot).
 
 Give the NAS a fixed address (a DHCP reservation) so the saved URL keeps working.
+
+## Work calendar from a Mac (push)
+
+For a calendar the server can't read itself (typically a Google Workspace calendar whose admin
+disabled secret addresses), a Mac that already shows it can push it. `push-macos/frame-push`
+reads the chosen calendars through the macOS Calendar app every 5 minutes and sends **only the
+title, start, end and all-day flag** of each event (or "Busy", with `busyOnly`). Attendees,
+descriptions, locations, links and conference details are never read into the payload, and the
+server drops any other field it is sent. Declined and cancelled events are skipped.
+
+**1. Server.** Make up a long random token (`push-macos/install.sh --print-token` prints one) and
+add the calendar to the stack's environment, then **Update the stack**:
+
+```
+PUSH_CALENDARS=[{"id":"work","name":"Work","color":"#3B6FD8","alert":true,"token":"PASTE-THE-TOKEN"}]
+```
+
+`id` shares one namespace with `CALENDARS` (pick an id that isn't used there). The token is a
+password for this one calendar: it can replace that calendar's events and nothing else.
+`PUSH_STALE_MINUTES` (60) marks the calendar as `STALE` in the agenda's status line when no push
+has arrived for that long; the last snapshot stays on screen.
+
+**2. Mac: add the work account to Calendar.** System Settings → **Internet Accounts** → **Add
+Account** → **Google**, sign in with the work account, and leave **Calendars** switched on. Open
+the Calendar app and check that the work calendar shows up.
+
+**3. Mac: install the pusher** (needs the Xcode command line tools for `swiftc`:
+`xcode-select --install`). From a clone of this repository:
+
+```sh
+cd homeserver/push-macos
+./install.sh --list-calendars   # builds it, asks for Calendar access (click Allow), lists calendars
+./install.sh                    # first run: creates the config file and stops
+```
+
+Edit `~/Library/Application Support/frame-push/config.json`:
+
+| Field | Meaning |
+| --- | --- |
+| `server` | `http://<nas-ip>:8088` |
+| `pushId` | the `id` from `PUSH_CALENDARS` |
+| `calendars` | identifiers (third column of `--list-calendars`) or calendar titles |
+| `daysAhead` / `daysBack` | window to send (14 / 1; up to 60 ahead) |
+| `busyOnly` | `true` sends "Busy" instead of titles |
+| `exclude` | regular expressions; matching titles are not sent (case-insensitive) |
+| `skipDeclined` | `true` (default) leaves out meetings you declined |
+
+Then run `./install.sh` again. It asks you to paste the token (stored in your login Keychain,
+service `frame-push`), shows nothing on screen, does a dry run, and loads a LaunchAgent
+(`~/Library/LaunchAgents/io.github.photo-frame-dashboard.frame-push.plist`) that pushes now and
+every 5 minutes. When the Mac is away from home the push fails quietly and is retried.
+
+- See what is sent: `~/Library/Application\ Support/frame-push/frame-push --dry-run`
+- Log: `~/Library/Logs/frame-push.log`
+- After changing the config nothing else is needed; after updating this repository, run
+  `./install.sh` again (a rebuilt tool asks for the token once more).
+- Remove: `./uninstall.sh` (keeps config and token) or `./uninstall.sh --purge`.
+
+The pushed calendar behaves like the others: its colour, alerts (with `"alert": true`), date
+navigation, and the status line, which shows when it was last updated.
 
 ## Screen off, night schedule and Settings
 
@@ -227,6 +288,9 @@ step, no framework, no CSS variables or grid. `test/frontend.test.js` fails if n
 Times on the page come from the server, not the frame, whose clock and time zone are unreliable.
 
 `GET /api/state` also returns the screen schedule as `screen: {from, to, wakeMin}`.
+`PUT /api/push/<id>` with `Authorization: Bearer <token>` and `{"events":[{uid, title, start, end}
+| {uid, title, allDay: true, startDate, endDate}]}` replaces a pushed calendar (at most 500 events,
+256 KB; titles are cut at 200 characters).
 
 API, for scripts and phones: `GET /api/events` (optionally `?from=YYYY-MM-DD&days=1..14`, within
 30 days back and 90 ahead), `GET /api/news` (404 `NOT_CONFIGURED` when unset), `GET /api/weather` (with `days[].hours`),

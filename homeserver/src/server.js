@@ -11,6 +11,7 @@ import { forecastUrl, mapForecast } from './weather.js';
 import { createTextFeed } from './textfeed.js';
 import { parseNews, mergeNews, fetchFeed } from './news.js';
 import { parseRange } from './range.js';
+import { PushStore, validatePushPayload, pushedEventsBetween, pushStatus, tokenMatches, LIMITS as PUSH_LIMITS } from './push.js';
 import { StateStore } from './state.js';
 import { offsetTable, startOfLocalDay } from './tz.js';
 
@@ -28,6 +29,8 @@ const MAX_BODY = 16384;
 
 const cfg = loadConfig();
 const store = new StateStore(cfg.stateFile);
+const pushStore = new PushStore(dirname(cfg.stateFile), cfg.pushCalendars);
+const allCalendars = cfg.calendars.concat(cfg.pushCalendars); // for the client: ids, names, colours, alert
 
 function log(event, fields) {
   console.log(JSON.stringify({ t: new Date().toISOString(), event, ...fields }));
@@ -74,6 +77,7 @@ function eventsBetween(from, to) {
       log('calendar_expand_failed', { cal: cal.id, message: String(err && err.message).slice(0, 120) });
     }
   }
+  for (const cal of cfg.pushCalendars) lists.push(pushedEventsBetween(pushStore.get(cal.id), cal, from, to));
   return mergeEvents(lists);
 }
 
@@ -125,10 +129,18 @@ async function refreshCalendars() {
 }
 
 function calendarStatus() {
+  const now = Date.now();
   return cfg.calendars.map((c) => {
     const f = feeds.get(c.id) || {};
     return { id: c.id, okAt: f.okAt || null, error: f.parseError || f.error || null };
-  });
+  }).concat(cfg.pushCalendars.map((c) => pushStatus(c, pushStore.get(c.id), now, cfg.pushStaleMinutes)));
+}
+
+/** A pushed snapshot replaces the calendar's events; ranged caches are rebuilt from it. */
+function onPushed() {
+  feedsVersion++;
+  rangeCache.clear();
+  rebuildEvents();
 }
 
 // ------------------------------------------------------------ weather
@@ -199,13 +211,13 @@ function send(res, status, body, type) {
   res.end(data);
 }
 
-function readBody(req) {
+function readBody(req, limit = MAX_BODY) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         reject(Object.assign(new Error('body too large'), { status: 413 }));
         req.destroy();
       } else chunks.push(c);
@@ -266,7 +278,7 @@ async function handle(req, res) {
         ...timeInfo(now, range.from - 86400000, range.to + 86400000),
         from: range.fromDate,
         days: range.days,
-        calendars: publicCalendars(cfg.calendars),
+        calendars: publicCalendars(allCalendars),
         status: calendarStatus(),
         alert: cfg.alert,
         events: eventsForRange(range.from, range.to),
@@ -275,7 +287,7 @@ async function handle(req, res) {
     if (!eventsWindow || startOfLocalDay(now, cfg.tz) !== eventsWindow.from) rebuildEvents();
     return send(res, 200, {
       ...timeInfo(now, eventsWindow.from - 86400000, eventsWindow.to + 86400000),
-      calendars: publicCalendars(cfg.calendars),
+      calendars: publicCalendars(allCalendars),
       status: calendarStatus(),
       alert: cfg.alert,
       events,
@@ -289,6 +301,26 @@ async function handle(req, res) {
   }
 
   if (req.method === 'GET' && path === '/api/state') return send(res, 200, stateBody(now));
+
+  // A laptop pushes a calendar snapshot: PUT /api/push/<id>, Authorization: Bearer <token>.
+  if (path.startsWith('/api/push/')) {
+    if (req.method !== 'PUT') return send(res, 405, { error: 'use PUT' });
+    const id = path.slice('/api/push/'.length);
+    let cal = null;
+    for (const c of cfg.pushCalendars) if (c.id === id) cal = c;
+    // Same answer for an unknown id and a wrong token, so ids can't be probed.
+    if (!cal || !tokenMatches(req.headers.authorization, cal.token)) {
+      log('push_refused', { cal: cal ? cal.id : '?' });
+      return send(res, 401, { error: 'unauthorised' });
+    }
+    if (Number(req.headers['content-length']) > PUSH_LIMITS.maxBody) return send(res, 413, { error: 'body too large' });
+    const body = await readBody(req, PUSH_LIMITS.maxBody);
+    const events = validatePushPayload(body, cfg.tz, now);
+    pushStore.put(cal.id, events, now);
+    onPushed();
+    log('calendar_pushed', { cal: cal.id, events: events.length });
+    return send(res, 200, { ok: true, events: events.length, receivedAt: now });
+  }
 
   if (req.method === 'GET' && path === '/api/news') {
     if (!cfg.newsFeeds.length) return send(res, 404, { error: 'NOT_CONFIGURED' });
@@ -327,7 +359,7 @@ const server = createServer((req, res) => {
 });
 
 server.listen(cfg.port, cfg.host, () => {
-  log('listening', { host: cfg.host, port: cfg.port, tz: cfg.tz, calendars: cfg.calendars.map((c) => c.id), textFeed: !!textFeed });
+  log('listening', { host: cfg.host, port: cfg.port, tz: cfg.tz, calendars: allCalendars.map((c) => c.id), textFeed: !!textFeed });
 });
 
 refreshCalendars();
