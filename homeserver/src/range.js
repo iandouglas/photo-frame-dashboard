@@ -1,5 +1,5 @@
 // The date window for GET /api/events?from=YYYY-MM-DD&days=N, bounded so a client can't ask the
-// server to expand years of recurrences.
+// server to read outside the window calendars are expanded over (expansionWindow below).
 import { localDate, wallToUtc } from './tz.js';
 
 export const RANGE = { minOffset: -30, maxOffset: 90, minDays: 1, maxDays: 14 };
@@ -54,5 +54,23 @@ export function parseRange(params, nowMs, tz, defaultDays) {
     to: wallToUtc(b.y, b.m, b.d, 0, 0, 0, tz),
     fromDate: localDate(wallToUtc(a.y, a.m, a.d, 12, 0, 0, tz), tz),
     days,
+  };
+}
+
+/**
+ * The window every calendar is expanded over once per refresh: everything parseRange() can
+ * ask for (minOffset .. maxOffset + maxDays) and the default window, between local midnights.
+ * `day` is today's local date; when it changes (midnight) the window moves.
+ */
+export function expansionWindow(nowMs, tz, defaultDays) {
+  const day = localDate(nowMs, tz);
+  const t = day.split('-').map(Number);
+  const todayIndex = dayIndex(t[0], t[1], t[2]);
+  const a = ymd(todayIndex + Math.min(0, RANGE.minOffset));
+  const b = ymd(todayIndex + Math.max(RANGE.maxOffset + RANGE.maxDays, defaultDays));
+  return {
+    day,
+    from: wallToUtc(a.y, a.m, a.d, 0, 0, 0, tz),
+    to: wallToUtc(b.y, b.m, b.d, 0, 0, 0, tz),
   };
 }
