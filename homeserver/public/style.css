@@ -330,26 +330,24 @@ h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #
 .wx-day:active { background: #F2EEE6; }
 
 /* ---------------------------------------------------------------- screen controls */
-.tool-bar {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-justify-content: flex-end;
-  justify-content: flex-end;
-  -webkit-flex: none;
-  flex: none;
-  height: 56px;
-  margin-bottom: 12px;
+/* Moon (screen off) and gear (Android settings) sit in the clock's top-right corner: small icons,
+   48px hit areas, stacked so they stay clear of the seconds at "12:59:59 PM". */
+.clock-wrap { position: relative; }
+.clock-tools {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  width: 48px;
 }
-.tool-btn {
-  width: 56px;
-  height: 56px;
-  margin-left: 12px;
-  border-radius: 14px;
-  background: #FBF9F4;
-  color: #3B3934;
+.clock-btn {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  color: #7A756B;
   padding-top: 4px;
 }
-.tool-btn:active { background: #E8E2D5; }
+.clock-btn:active { background: #E8E2D5; }
 /* Screen off without the kiosk bridge (a plain browser): black page until the next touch. */
 .blackout {
   position: fixed;
@@ -381,10 +379,24 @@ h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #
 }
 .link { font-size: 15px; letter-spacing: .04em; text-transform: none; color: #3B6FD8; min-height: 48px; padding: 0 4px; }
 
-.alert-title { font-size: 24px; line-height: 1.2; margin-bottom: 4px; }
-.alert-sub { font-size: 16px; color: #7A756B; }
-.alert-count { font-size: 56px; font-weight: 300; line-height: 1.1; margin-top: 6px; }
-.alert-count.is-later { font-size: 32px; color: #3B3934; }
+.alert-meta {
+  font-size: 15px;
+  color: #3B3934;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.alert-title {
+  font-size: 20px;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-wrap: break-word;
+}
+.alert-count { font-size: 44px; font-weight: 300; line-height: 1.1; margin-top: 6px; }
 .alert-card.is-countdown { background: #FFF1D6; }
 .alert-card.is-countdown .alert-count { color: #C2410C; }
 .alert-card.is-acked .alert-count { color: #00A36C; }
@@ -421,7 +433,7 @@ h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #
 
 /* ---------------------------------------------------------------- pomodoro */
 .pomo-phase { font-size: 20px; color: #3B3934; }
-.pomo-time { font-size: 96px; font-weight: 300; line-height: 1; letter-spacing: -.02em; margin: 4px 0 10px; }
+.pomo-time { font-size: 64px; font-weight: 300; line-height: 1; letter-spacing: -.02em; margin: 4px 0 10px; }
 .bar { height: 8px; background: #E8E2D5; border-radius: 4px; overflow: hidden; }
 .bar-fill { height: 8px; width: 0; background: #E5261E; }
 .pomo.is-break .bar-fill { background: #00A36C; }

@@ -157,7 +157,43 @@
     return 'on';
   }
 
+  /**
+   * What the agenda shows for one day.
+   * list: events (any order); day: the day number shown; dayOf(ms): day number of an instant in
+   * the server's zone; now: ms. today: the day number of `now`.
+   * Returns { allDay: [], timed: [], next: null | { day, event } }.
+   *   Today: all-day events covering today, then timed events that have not ended, and `next`:
+   *   the first event (all-day first, then by start) of the first later day on which an event
+   *   starts. Other days: everything on that day, ended or not, and no `next`.
+   */
+  function agendaDay(list, day, today, now, dayOf) {
+    var out = { allDay: [], timed: [], next: null };
+    var isToday = day === today;
+    var nextDay = Infinity, nextEv = null;
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i];
+      var first = dayOf(e.start), last = dayOf(Math.max(e.start, e.end - 1));
+      if (first <= day && last >= day) {
+        if (e.allDay) out.allDay.push(e);
+        else if (!isToday || e.end > now) out.timed.push(e);
+      } else if (isToday && first > day && (first < nextDay || (first === nextDay && earlier(e, nextEv)))) {
+        nextDay = first;
+        nextEv = e;
+      }
+    }
+    out.allDay.sort(byStart);
+    out.timed.sort(byStart);
+    if (nextEv) out.next = { day: nextDay, event: nextEv };
+    return out;
+  }
+  function byStart(a, b) { return a.start - b.start || a.end - b.end; }
+  function earlier(a, b) {
+    if (a.allDay !== b.allDay) return !!a.allDay;
+    return a.start < b.start || (a.start === b.start && a.end < b.end);
+  }
+
   root.Logic = {
+    agendaDay: agendaDay,
     hhmmToMin: hhmmToMin,
     inWindow: inWindow,
     screenWanted: screenWanted,
