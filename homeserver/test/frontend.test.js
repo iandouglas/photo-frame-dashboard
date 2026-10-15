@@ -31,6 +31,6 @@ test('stylesheet avoids CSS the old WebView rejects', () => {
 
 test('the text card is filled with textContent, never innerHTML', () => {
   const src = readFileSync(new URL('app.js', dir), 'utf8');
-  assert.match(src, /body\.textContent = d\.text/);
+  assert.match(src, /\('textBody'\)\.textContent = d\.text/);
   assert.ok(!/innerHTML[^;]*\bd\.text\b/.test(src), 'feed text must not reach innerHTML');
 });

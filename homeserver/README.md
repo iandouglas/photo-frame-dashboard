@@ -140,7 +140,8 @@ Other settings, all optional: `HOST_PORT` (8088), `TZ`, `LAT`/`LON`/`LOCATION_NA
 `UNITS` (`imperial` or `metric`), `REFRESH_MINUTES` (5), `EVENTS_DAYS` (14), `ALERT_LEAD_MIN` (2),
 `ALERT_COUNTDOWN_MIN` (15), `ALERT_GRACE_MIN` (10), `WRITE_TOKEN` (see below), `TEXT_FEED_URL`
 and `TEXT_FEED_TITLE` (no default; the text card stays hidden until set), `NEWS_FEEDS` and
-`NEWS_MINUTES` (see below).
+`NEWS_MINUTES` (see below), `SCREEN_OFF_FROM`, `SCREEN_OFF_TO` and `WAKE_MINUTES` (see
+[Screen off](#screen-off-night-schedule-and-settings)).
 
 ### News feeds
 
@@ -178,6 +179,27 @@ make the kiosk the frame's Home screen, see the [kiosk guide](../dashboard/kiosk
 
 Give the NAS a fixed address (a DHCP reservation) so the saved URL keeps working.
 
+## Screen off, night schedule and Settings
+
+The top of the right column has two buttons:
+
+- **Moon:** turns the screen off. In the Home HQ kiosk this switches the frame's backlight off
+  (see the [kiosk guide](../dashboard/kiosk/README.md#screen-off-and-settings-from-the-page-windowhomehq);
+  it uses the frame's root `su`). In an ordinary browser the page just goes black. The next
+  touch turns it back on and does nothing else.
+- **Gear:** opens Android Settings. Shown only in the kiosk.
+
+Night schedule (stack environment, local time in `TZ`, both unset = no schedule):
+
+| Setting | Example | Effect |
+| --- | --- | --- |
+| `SCREEN_OFF_FROM` | `22:30` | Screen off from this time... |
+| `SCREEN_OFF_TO` | `06:30` | ...until this time. The window may cross midnight |
+| `WAKE_MINUTES` | `2` (default) | A touch during the window keeps the screen on this long, then it goes off again |
+
+A meeting alert turns the screen on and flashes even during the window. Tapping **ACK** counts as
+a touch: the screen stays on for `WAKE_MINUTES`, then the schedule resumes.
+
 ## Optional: a write token
 
 Anyone on your LAN can open the page and press its buttons. To limit button presses (ACK,
@@ -203,6 +225,8 @@ CALENDARS_FILE=../tmp/cal.json ALLOW_FILE_FEEDS=1 STATE_FILE=../tmp/state.json n
 The page is plain ES5 and old-style CSS because the frame's stock WebView is Chrome 44: no build
 step, no framework, no CSS variables or grid. `test/frontend.test.js` fails if newer syntax creeps in.
 Times on the page come from the server, not the frame, whose clock and time zone are unreliable.
+
+`GET /api/state` also returns the screen schedule as `screen: {from, to, wakeMin}`.
 
 API, for scripts and phones: `GET /api/events` (optionally `?from=YYYY-MM-DD&days=1..14`, within
 30 days back and 90 ahead), `GET /api/news` (404 `NOT_CONFIGURED` when unset), `GET /api/weather` (with `days[].hours`),

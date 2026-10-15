@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
   static final float EXIT_SLOP_PX = 60;
 
   private WebView web;
+  private ScreenBridge bridge;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final int[] exitIds = new int[2];
   private final float[] exitX = new float[2];
@@ -143,6 +144,7 @@ public class MainActivity extends Activity {
       @Override
       public void onPageStarted(WebView view, String url, Bitmap icon) {
         pageFailed = false;
+        bridge.onPageStarted(url);
       }
 
       @Override
@@ -175,6 +177,9 @@ public class MainActivity extends Activity {
     root.addView(web);
     root.addView(buildOffline());
     setContentView(root);
+    // window.HomeHQ: screen off/on, Settings, light level; answers the saved dashboard origin only.
+    bridge = new ScreenBridge(this, web, root, this::savedUrl);
+    web.addJavascriptInterface(bridge, "HomeHQ");
 
     String url = urlFrom(getIntent());
     web.loadUrl(url != null ? url : savedUrl());
@@ -333,6 +338,7 @@ public class MainActivity extends Activity {
   protected void onDestroy() {
     unregisterReceiver(networkChange);
     handler.removeCallbacksAndMessages(null);
+    if (bridge != null) bridge.release(); // never leave the backlight off
     if (web != null) web.destroy();
     super.onDestroy();
   }
