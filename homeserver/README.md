@@ -89,7 +89,9 @@ in to Google on its own.
    logged or shown.
 
 To change a setting later, edit the stack's environment variables and click **Update the stack**.
-To pick up new code, open the stack and use **Pull and redeploy**.
+To pick up new code, open the stack and use **Pull and redeploy** (in the stack's Git section;
+the reference must be `refs/heads/main`). The compose file sets `pull_policy: build`, so every
+deploy rebuilds the image from the pulled files. Check `http://<nas-ip>:8088/healthz` afterwards.
 Pomodoro settings and ACKs are kept in the `frame-data` volume.
 
 Other settings, all optional: `HOST_PORT` (8088), `TZ`, `LAT`/`LON`/`LOCATION_NAME` (no default; weather stays off until set),
