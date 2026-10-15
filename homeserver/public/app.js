@@ -6,6 +6,9 @@
   var MIN = 60000;
   var POLL_EVENTS = 60000, POLL_STATE = 10000, POLL_WEATHER = 10 * MIN, POLL_TEXT = 15000;
   var HOURLY_IDLE = MIN; // the hourly view returns to the 10-day list after this long untouched
+  var POLL_NEWS = 5 * MIN;
+  var AGENDA_IDLE = 2 * MIN; // a browsed day returns to today after this long untouched
+  var NAV_BACK = -30, NAV_AHEAD = 90, NAV_DAYS = 14; // match the server's /api/events bounds
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -13,11 +16,16 @@
     skew: 0, offsets: [[0, 0]], calendars: [], calById: {}, alertCals: {}, alertOpts: null,
     events: [], status: [], weather: null, pomodoro: null, acks: {},
     online: true, agendaMinute: -1, lastAlertKey: null, pomoDoneShown: null, editing: null,
-    wxDay: null, wxTouched: 0, text: null
+    wxDay: null, wxTouched: 0, text: null,
+    navDay: null, navData: null, navTouched: 0, // agenda day browsing (null = today)
+    news: null, newsOn: false, tab: savedTab(), clockHM: '', clockSec: '', clockAmPm: ''
   };
   var token = (/[?&]token=([^&]+)/.exec(location.search) || [])[1] || '';
 
   function $(id) { return document.getElementById(id); }
+  function savedTab() {
+    try { return window.localStorage.getItem('frame.tab') === 'news' ? 'news' : 'agenda'; } catch (e) { return 'agenda'; }
+  }
   function esc(s) {
     return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
   }
@@ -96,6 +104,19 @@
       renderAgenda();
       tick();
     });
+    if (S.navDay !== null) loadNavDay(S.navDay);
+  }
+
+  function isoDay(day) {
+    var d = new Date(day * 864e5);
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+  }
+  function loadNavDay(day) {
+    request('GET', 'api/events?from=' + isoDay(day) + '&days=' + NAV_DAYS, null, function (err, d) {
+      if (err || !d || S.navDay !== day) return; // a later tap moved on
+      S.navData = { day: day, events: d.events || [] };
+      renderAgenda();
+    });
   }
   function loadWeather() {
     request('GET', 'api/weather', null, function (err, d) {
@@ -133,37 +154,48 @@
   function renderAgenda() {
     var t = now();
     var today = dayNumber(t);
+    var start = S.navDay === null ? today : S.navDay;
+    var list = S.navDay === null ? S.events : (S.navData && S.navData.day === start ? S.navData.events : null);
+    renderNav(start, today);
+    if (!list) { $('agenda').innerHTML = '<p class="empty">Loading…</p>'; return; }
     var groups = {}, order = [];
     function group(day) {
       if (!groups[day]) { groups[day] = { allDay: [], timed: [] }; order.push(day); }
       return groups[day];
     }
-    for (var i = 0; i < S.events.length; i++) {
-      var e = S.events[i];
-      if (e.end <= t && !(e.allDay && dayNumber(e.start) === today)) continue;
+    for (var i = 0; i < list.length; i++) {
+      var e = list[i];
+      if (start === today) {
+        if (e.end <= t && !(e.allDay && dayNumber(e.start) === today)) continue;
+      } else if (dayNumber(e.end - 1) < start) continue;
       if (e.allDay) {
         // Multi-day all-day events appear on each remaining day they cover.
-        var first = Math.max(dayNumber(e.start), today), last = dayNumber(e.end - 1);
-        for (var d = first; d <= last && d < today + 14; d++) group(d).allDay.push(e);
+        var first = Math.max(dayNumber(e.start), start), last = dayNumber(e.end - 1);
+        for (var d = first; d <= last && d < start + 14; d++) group(d).allDay.push(e);
       } else {
-        group(Math.max(dayNumber(e.start), today)).timed.push(e);
+        group(Math.max(dayNumber(e.start), start)).timed.push(e);
       }
     }
-    group(today); // always show Today, even when it is empty
+    group(start); // always show the first day, even when it is empty
     order.sort(function (a, b) { return a - b; });
 
     var html = '';
     for (var g = 0; g < order.length; g++) {
       var day = order[g], grp = groups[day];
-      var rd = relDay(day * 864e5 + 12 * 36e5 - offsetFor(day * 864e5) * MIN);
-      html += '<div class="day-head"><b>' + rd.label + '</b> · ' + rd.date + '</div>';
+      // The first day's heading is the navigation bar above the list.
+      if (day !== start) {
+        var rd = relDay(dayMs(day));
+        html += '<div class="day-head"><b>' + rd.label + '</b> · ' + rd.date + '</div>';
+      }
       for (var a = 0; a < grp.allDay.length; a++) {
         html += '<span class="allday" style="background:' + calColor(grp.allDay[a].cal) + '">' + esc(grp.allDay[a].title) + '</span>';
       }
       for (var k = 0; k < grp.timed.length; k++) html += eventRow(grp.timed[k], t);
-      if (day === today && !grp.allDay.length && !grp.timed.length) html += '<p class="empty">Nothing else today</p>';
+      if (day === start && !grp.allDay.length && !grp.timed.length) {
+        html += '<p class="empty">' + (day === today ? 'Nothing else today' : 'Nothing scheduled') + '</p>';
+      }
     }
-    $('agenda').innerHTML = html || '<p class="empty">No events in the next two weeks</p>';
+    $('agenda').innerHTML = html;
 
     var bad = [];
     for (var s = 0; s < S.status.length; s++) {
@@ -172,6 +204,96 @@
     }
     $('calStatus').textContent = bad.join(' · ');
     S.agendaMinute = Math.floor(t / MIN);
+  }
+
+  // Noon of a day number, as an instant (safe across DST changes).
+  function dayMs(day) { return day * 864e5 + 12 * 36e5 - offsetFor(day * 864e5) * MIN; }
+
+  function renderNav(start, today) {
+    var rd = relDay(dayMs(start)), diff = start - today;
+    var label = diff === -1 ? 'Yesterday' : rd.label;
+    var lab = $('dayLabel');
+    lab.className = 'nav-day' + (diff ? ' is-away' : '');
+    lab.innerHTML = '<b>' + label + '</b> · ' + rd.date + (diff ? '<small>Tap for today</small>' : '');
+    $('dayPrev').disabled = diff <= NAV_BACK;
+    $('dayNext').disabled = diff >= NAV_AHEAD;
+  }
+
+  function goDay(day) {
+    var today = dayNumber(now());
+    day = Math.max(today + NAV_BACK, Math.min(today + NAV_AHEAD, day));
+    S.navTouched = Date.now();
+    S.navDay = day === today ? null : day;
+    if (S.navDay !== null && !(S.navData && S.navData.day === day)) S.navData = null;
+    $('agenda').scrollTop = 0;
+    renderAgenda();
+    if (S.navDay !== null) loadNavDay(day);
+  }
+  function stepDay(delta) {
+    goDay((S.navDay === null ? dayNumber(now()) : S.navDay) + delta);
+  }
+
+  // ------------------------------------------------------------ news
+  function loadNews() {
+    request('GET', 'api/news', null, function (err, d) {
+      if (err === 'NOT_CONFIGURED') { S.newsOn = false; applyTab(); return; }
+      if (err || !d) return; // keep what is shown
+      S.newsOn = true;
+      S.news = d;
+      renderNews();
+      applyTab();
+    });
+  }
+
+  function relTime(ms) {
+    if (ms == null) return '';
+    var m = Math.floor((now() - ms) / MIN);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + 'm ago';
+    if (m < 24 * 60) return Math.floor(m / 60) + 'h ago';
+    return Math.floor(m / 1440) + 'd ago';
+  }
+
+  function renderNews() {
+    var d = S.news;
+    if (!d) return;
+    var html = '';
+    for (var i = 0; i < d.items.length; i++) {
+      var it = d.items[i];
+      html += '<div class="news-item"><div class="news-title">' + esc(it.title) + '</div>' +
+        '<div class="news-meta"><b>' + esc(it.source) + '</b>' +
+        (it.time != null ? ' · <span class="news-time" data-t="' + it.time + '">' + relTime(it.time) + '</span>' : '') + '</div></div>';
+    }
+    $('news').innerHTML = html || '<p class="empty">No headlines yet</p>';
+    var bad = [];
+    for (var s = 0; s < d.status.length; s++) {
+      var st = d.status[s];
+      if (st.error) bad.push(st.name + ': ' + st.error);
+    }
+    $('newsStatus').textContent = bad.join(' · ');
+  }
+
+  // Refresh the "12m ago" labels without re-rendering (keeps the scroll position).
+  function updateNewsTimes() {
+    var els = $('news').getElementsByClassName('news-time');
+    for (var i = 0; i < els.length; i++) els[i].textContent = relTime(+els[i].getAttribute('data-t'));
+  }
+
+  function applyTab() {
+    var tab = S.newsOn ? S.tab : 'agenda';
+    $('seg').className = S.newsOn ? 'seg' : 'seg hidden';
+    $('agendaLabel').className = S.newsOn ? 'hidden' : '';
+    var btns = $('seg').getElementsByTagName('button');
+    for (var i = 0; i < btns.length; i++) btns[i].className = btns[i].getAttribute('data-tab') === tab ? 'is-on' : '';
+    $('agendaPane').className = tab === 'agenda' ? 'pane' : 'pane hidden';
+    $('newsPane').className = tab === 'news' ? 'pane' : 'pane hidden';
+    $('legend').className = tab === 'agenda' ? 'legend' : 'legend hidden';
+  }
+
+  function setTab(tab) {
+    S.tab = tab === 'news' ? 'news' : 'agenda';
+    try { window.localStorage.setItem('frame.tab', S.tab); } catch (e) { /* storage off */ }
+    applyTab();
   }
 
   function eventRow(e, t) {
@@ -448,7 +570,14 @@
   // ------------------------------------------------------------ clock and tick
   function renderClock() {
     var t = now(), w = wall(t), h = w.getUTCHours();
-    $('clock').innerHTML = (h % 12 || 12) + ':' + pad2(w.getUTCMinutes()) + '<small>' + (h >= 12 ? 'PM' : 'AM') + '</small>';
+    if (!$('clockHM')) {
+      $('clock').innerHTML = '<span id="clockHM"></span><span class="clock-side"><span class="clock-sec" id="clockSec"></span>' +
+        '<span class="clock-ampm" id="clockAmPm"></span></span>';
+    }
+    var hm = (h % 12 || 12) + ':' + pad2(w.getUTCMinutes()), sec = pad2(w.getUTCSeconds()), ampm = h >= 12 ? 'PM' : 'AM';
+    if (hm !== S.clockHM) { S.clockHM = hm; $('clockHM').textContent = hm; }
+    if (sec !== S.clockSec) { S.clockSec = sec; $('clockSec').textContent = sec; }
+    if (ampm !== S.clockAmPm) { S.clockAmPm = ampm; $('clockAmPm').textContent = ampm; }
     $('date').textContent = DAYS[w.getUTCDay()] + ', ' + MONTHS[w.getUTCMonth()] + ' ' + w.getUTCDate();
   }
 
@@ -456,7 +585,8 @@
     renderClock();
     renderAlert();
     if (!S.editing) renderPomodoro();
-    if (Math.floor(now() / MIN) !== S.agendaMinute) renderAgenda();
+    if (Math.floor(now() / MIN) !== S.agendaMinute) { renderAgenda(); updateNewsTimes(); }
+    if (S.navDay !== null && Date.now() - S.navTouched > AGENDA_IDLE) goDay(dayNumber(now()));
     if (S.wxDay && Date.now() - S.wxTouched > HOURLY_IDLE) closeHourly();
   }
 
@@ -471,6 +601,17 @@
   $('pomoGear').addEventListener('click', function () { openSettings(!S.editing); });
   $('pomoSettings').addEventListener('click', onSettingsTap);
   $('wxDays').addEventListener('click', onDaysTap);
+  $('dayPrev').addEventListener('click', function () { stepDay(-1); });
+  $('dayNext').addEventListener('click', function () { stepDay(1); });
+  $('dayLabel').addEventListener('click', function () { goDay(dayNumber(now())); });
+  // Touching or scrolling the agenda keeps a browsed day open.
+  $('agendaPane').addEventListener('touchstart', function () { S.navTouched = Date.now(); });
+  $('agenda').addEventListener('scroll', function () { S.navTouched = Date.now(); });
+  $('seg').addEventListener('click', function (ev) {
+    var el = ev.target;
+    while (el && el !== this && !el.getAttribute('data-tab')) el = el.parentNode;
+    if (el && el !== this) setTab(el.getAttribute('data-tab'));
+  });
   // Any touch or scroll in the panel keeps the hourly view open.
   $('wxDays').addEventListener('touchstart', function () { S.wxTouched = Date.now(); });
   $('wxDays').addEventListener('scroll', function () { S.wxTouched = Date.now(); }, true);
@@ -479,9 +620,12 @@
   loadState();
   loadWeather();
   loadText();
+  loadNews();
+  applyTab();
   setInterval(loadEvents, POLL_EVENTS);
   setInterval(loadState, POLL_STATE);
   setInterval(loadWeather, POLL_WEATHER);
   setInterval(loadText, POLL_TEXT);
+  setInterval(loadNews, POLL_NEWS);
   setInterval(tick, 1000);
 })();

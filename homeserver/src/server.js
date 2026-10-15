@@ -6,9 +6,11 @@ import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import { loadConfig } from './config.js';
-import { expandFeed, mergeEvents, publicCalendars } from './calendar.js';
+import { parseFeed, expandParsed, mergeEvents, publicCalendars } from './calendar.js';
 import { forecastUrl, mapForecast } from './weather.js';
 import { createTextFeed } from './textfeed.js';
+import { parseNews, mergeNews, fetchFeed } from './news.js';
+import { parseRange } from './range.js';
 import { StateStore } from './state.js';
 import { offsetTable, startOfLocalDay } from './tz.js';
 
@@ -33,9 +35,11 @@ function log(event, fields) {
 
 // ------------------------------------------------------------ calendars
 
-const feeds = new Map(); // id -> { text, okAt, error }
+const feeds = new Map(); // id -> { parsed, okAt, error, parseError }
 let events = [];
 let eventsWindow = null;
+let feedsVersion = 0; // bumps on every refresh; keys the ranged-request cache
+const rangeCache = new Map(); // "version|from|to" -> events, a few entries
 
 async function fetchText(url) {
   if (url.startsWith('file:') && process.env.ALLOW_FILE_FEEDS === '1') {
@@ -58,39 +62,64 @@ function errorCode(err) {
   return 'FETCH_FAILED';
 }
 
+/** Expand every cached calendar into [from, to) and merge. */
+function eventsBetween(from, to) {
+  const lists = [];
+  for (const cal of cfg.calendars) {
+    const feed = feeds.get(cal.id);
+    if (!feed || !feed.parsed) continue;
+    try {
+      lists.push(expandParsed(feed.parsed, cal, from, to, cfg.tz));
+    } catch (err) {
+      log('calendar_expand_failed', { cal: cal.id, message: String(err && err.message).slice(0, 120) });
+    }
+  }
+  return mergeEvents(lists);
+}
+
 function rebuildEvents() {
   const now = Date.now();
   const from = startOfLocalDay(now, cfg.tz);
   const to = from + cfg.eventsDays * 86400000;
-  const lists = [];
-  for (const cal of cfg.calendars) {
-    const feed = feeds.get(cal.id);
-    if (!feed || !feed.text) continue;
-    try {
-      lists.push(expandFeed(feed.text, cal, from, to, cfg.tz));
-      feed.parseError = null;
-    } catch (err) {
-      feed.parseError = 'PARSE_FAILED';
-      log('calendar_parse_failed', { cal: cal.id, message: String(err && err.message).slice(0, 120) });
-    }
-  }
-  events = mergeEvents(lists);
+  events = eventsBetween(from, to);
   eventsWindow = { from, to, builtAt: now };
+}
+
+/** Events for a requested window (agenda navigation), cached until the next feed refresh. */
+function eventsForRange(from, to) {
+  const key = feedsVersion + '|' + from + '|' + to;
+  let list = rangeCache.get(key);
+  if (!list) {
+    list = eventsBetween(from, to);
+    if (rangeCache.size >= 16) rangeCache.delete(rangeCache.keys().next().value);
+    rangeCache.set(key, list);
+  }
+  return list;
 }
 
 async function refreshCalendars() {
   await Promise.all(cfg.calendars.map(async (cal) => {
     const feed = feeds.get(cal.id) || {};
     try {
-      feed.text = await fetchText(cal.url);
+      const text = await fetchText(cal.url);
       feed.okAt = Date.now();
       feed.error = null;
+      try {
+        // Parse once per fetch; any date range is expanded from this.
+        feed.parsed = parseFeed(text);
+        feed.parseError = null;
+      } catch (err) {
+        feed.parseError = 'PARSE_FAILED';
+        log('calendar_parse_failed', { cal: cal.id, message: String(err && err.message).slice(0, 120) });
+      }
     } catch (err) {
       feed.error = errorCode(err);
       log('calendar_fetch_failed', { cal: cal.id, code: feed.error });
     }
     feeds.set(cal.id, feed);
   }));
+  feedsVersion++;
+  rangeCache.clear();
   rebuildEvents();
   log('calendars_refreshed', { calendars: cfg.calendars.length, events: events.length });
 }
@@ -123,6 +152,35 @@ async function refreshWeather() {
     weatherError = errorCode(err);
     log('weather_failed', { code: weatherError });
   }
+}
+
+// ------------------------------------------------------------ news
+
+const newsFeeds = new Map(); // name -> { items, okAt, error }
+let news = [];
+
+async function refreshNews() {
+  await Promise.all(cfg.newsFeeds.map(async (f) => {
+    const st = newsFeeds.get(f.name) || { items: [] };
+    try {
+      st.items = parseNews(await fetchFeed(f.url), f.name);
+      st.okAt = Date.now();
+      st.error = null;
+    } catch (err) {
+      st.error = errorCode(err);
+      log('news_fetch_failed', { feed: f.name, code: st.error });
+    }
+    newsFeeds.set(f.name, st);
+  }));
+  news = mergeNews(cfg.newsFeeds.map((f) => (newsFeeds.get(f.name) || {}).items || []));
+  log('news_refreshed', { feeds: cfg.newsFeeds.length, items: news.length });
+}
+
+function newsStatus() {
+  return cfg.newsFeeds.map((f) => {
+    const st = newsFeeds.get(f.name) || {};
+    return { name: f.name, okAt: st.okAt || null, error: st.error || null };
+  });
 }
 
 // ------------------------------------------------------------ text feed
@@ -202,6 +260,18 @@ async function handle(req, res) {
   if (req.method === 'GET' && path === '/healthz') return send(res, 200, { ok: true });
 
   if (req.method === 'GET' && path === '/api/events') {
+    const range = parseRange(url.searchParams, now, cfg.tz, cfg.eventsDays);
+    if (range) {
+      return send(res, 200, {
+        ...timeInfo(now, range.from - 86400000, range.to + 86400000),
+        from: range.fromDate,
+        days: range.days,
+        calendars: publicCalendars(cfg.calendars),
+        status: calendarStatus(),
+        alert: cfg.alert,
+        events: eventsForRange(range.from, range.to),
+      });
+    }
     if (!eventsWindow || startOfLocalDay(now, cfg.tz) !== eventsWindow.from) rebuildEvents();
     return send(res, 200, {
       ...timeInfo(now, eventsWindow.from - 86400000, eventsWindow.to + 86400000),
@@ -219,6 +289,11 @@ async function handle(req, res) {
   }
 
   if (req.method === 'GET' && path === '/api/state') return send(res, 200, stateBody(now));
+
+  if (req.method === 'GET' && path === '/api/news') {
+    if (!cfg.newsFeeds.length) return send(res, 404, { error: 'NOT_CONFIGURED' });
+    return send(res, 200, { now, items: news, status: newsStatus() });
+  }
 
   if (req.method === 'GET' && path === '/api/text') {
     if (!textFeed) return send(res, 404, { error: 'NOT_CONFIGURED' });
@@ -258,6 +333,10 @@ server.listen(cfg.port, cfg.host, () => {
 refreshCalendars();
 setInterval(refreshCalendars, cfg.refreshMinutes * 60000).unref();
 refreshWeather();
+if (cfg.newsFeeds.length) {
+  refreshNews();
+  setInterval(refreshNews, cfg.newsMinutes * 60000).unref();
+}
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => server.close(() => process.exit(0)));

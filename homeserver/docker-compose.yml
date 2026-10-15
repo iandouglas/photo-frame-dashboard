@@ -28,6 +28,9 @@ services:
       # Optional plain-text card, refreshed every 15 s, e.g. https://dadjokes736.com
       TEXT_FEED_URL: ${TEXT_FEED_URL:-}
       TEXT_FEED_TITLE: ${TEXT_FEED_TITLE:-}
+      # Optional News tab: JSON [{"name","url"}] of RSS/Atom feeds (see .env.example)
+      NEWS_FEEDS: ${NEWS_FEEDS:-}
+      NEWS_MINUTES: ${NEWS_MINUTES:-10}
     volumes:
       - frame-data:/data
 

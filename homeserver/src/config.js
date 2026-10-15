@@ -2,6 +2,7 @@
 // and never logged, returned by the API, or included in error messages.
 import { readFileSync } from 'node:fs';
 import { isValidZone } from './tz.js';
+import { parseNewsFeeds } from './news.js';
 
 const DEFAULT_COLORS = ['#3B6FD8', '#00A36C', '#C2410C', '#7C3AED', '#DB2777', '#0E7490'];
 
@@ -103,5 +104,7 @@ export function loadConfig() {
     stateFile: process.env.STATE_FILE || './data/state.json',
     writeToken: process.env.WRITE_TOKEN || '',
     textFeed: parseTextFeed(process.env.TEXT_FEED_URL, process.env.TEXT_FEED_TITLE),
+    newsFeeds: parseNewsFeeds(process.env.NEWS_FEEDS),
+    newsMinutes: num('NEWS_MINUTES', 10, 5, 1440),
   };
 }
