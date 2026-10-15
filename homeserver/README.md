@@ -289,12 +289,18 @@ The page is plain ES5 and old-style CSS because the frame's stock WebView is Chr
 step, no framework, no CSS variables or grid. `test/frontend.test.js` fails if newer syntax creeps in.
 Times on the page come from the server, not the frame, whose clock and time zone are unreliable.
 
+Calendars are expanded once per refresh (and at local midnight) over the whole window the agenda
+can reach, in small slices so the server keeps answering meanwhile; requests just filter that.
+The log line `calendar_expanded` gives the time and occurrence count per calendar (no titles).
+`test/helpers/bigfeed.js` generates a feed with years of history for testing this.
+
 `GET /api/state` also returns the screen schedule as `screen: {from, to, wakeMin}`.
 `PUT /api/push/<id>` with `Authorization: Bearer <token>` and `{"events":[{uid, title, start, end}
 | {uid, title, allDay: true, startDate, endDate}]}` replaces a pushed calendar (at most 500 events,
 256 KB; titles are cut at 200 characters).
 
 API, for scripts and phones: `GET /api/events` (optionally `?from=YYYY-MM-DD&days=1..14`, within
-30 days back and 90 ahead), `GET /api/news` (404 `NOT_CONFIGURED` when unset), `GET /api/weather` (with `days[].hours`),
+30 days back and 90 ahead; `building: true` while calendars are still being expanded after a
+refresh, with whatever is ready), `GET /api/news` (404 `NOT_CONFIGURED` when unset), `GET /api/weather` (with `days[].hours`),
 `GET /api/text` (404 `NOT_CONFIGURED` when unset), `GET /api/state`,
 `POST /api/ack {"key"}`, `POST /api/pomodoro {"settings"?, "run"?}`.

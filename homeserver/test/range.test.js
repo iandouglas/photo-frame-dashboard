@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseRange } from '../src/range.js';
+import { parseRange, expansionWindow, RANGE } from '../src/range.js';
 import { parseFeed, expandParsed, expandFeed } from '../src/calendar.js';
 
 const TZ = 'America/Edmonton';
@@ -62,4 +62,20 @@ test('one parsed feed expands into any later range (recurrences beyond the defau
   // A past day within the bounds.
   const past = parseRange(q('from=2026-10-05&days=1'), NOW, TZ, 14);
   assert.equal(standups(past.from, past.to).length, 1);
+});
+
+test('the expansion window covers every range the agenda can ask for, and moves at midnight', () => {
+  const w = expansionWindow(NOW, TZ, 14);
+  assert.equal(w.day, '2026-10-14');
+  assert.equal(new Date(w.from).toISOString(), '2026-09-14T06:00:00.000Z'); // 30 days back, local midnight
+  assert.equal(new Date(w.to).toISOString(), '2027-01-26T07:00:00.000Z'); // +90 +14 days, MST by then
+  const q = (s) => new URLSearchParams(s);
+  for (const [from, days] of [['2026-09-14', 1], ['2027-01-12', RANGE.maxDays], ['2026-10-14', 14]]) {
+    const r = parseRange(q('from=' + from + '&days=' + days), NOW, TZ, 14);
+    assert.ok(r.from >= w.from && r.to <= w.to, from);
+  }
+  assert.equal(expansionWindow(NOW, TZ, 60).to, w.to, 'the longest default window fits too');
+  const late = Date.parse('2026-10-15T05:59:00Z'), next = Date.parse('2026-10-15T06:00:00Z');
+  assert.equal(expansionWindow(late, TZ, 14).day, '2026-10-14');
+  assert.equal(expansionWindow(next, TZ, 14).day, '2026-10-15');
 });

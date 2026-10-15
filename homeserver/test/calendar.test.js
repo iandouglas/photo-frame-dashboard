@@ -87,3 +87,27 @@ test('public calendar metadata never includes the feed URL', () => {
   assert.deepEqual(out, [{ id: 'work', name: 'Work', color: '#112233', alert: true }]);
   assert.ok(!JSON.stringify(out).includes('secret'));
 });
+
+test("one series' exceptions never touch another series at the same local time", () => {
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0',
+    'BEGIN:VEVENT', 'UID:a@example.test', 'DTSTART;TZID=America/Edmonton:20261001T090000',
+    'DTEND;TZID=America/Edmonton:20261001T093000', 'RRULE:FREQ=DAILY', 'SUMMARY:A', 'END:VEVENT',
+    'BEGIN:VEVENT', 'UID:b@example.test', 'DTSTART;TZID=America/Edmonton:20261001T090000',
+    'DTEND;TZID=America/Edmonton:20261001T093000', 'RRULE:FREQ=DAILY', 'SUMMARY:B', 'END:VEVENT',
+    // B's 13 Oct is cancelled, B's 14 Oct moved: A must not inherit either.
+    'BEGIN:VEVENT', 'UID:b@example.test', 'RECURRENCE-ID;TZID=America/Edmonton:20261013T090000',
+    'DTSTART;TZID=America/Edmonton:20261013T090000', 'DTEND;TZID=America/Edmonton:20261013T093000',
+    'STATUS:CANCELLED', 'SUMMARY:B', 'END:VEVENT',
+    'BEGIN:VEVENT', 'UID:b@example.test', 'RECURRENCE-ID;TZID=America/Edmonton:20261014T090000',
+    'DTSTART;TZID=America/Edmonton:20261014T110000', 'DTEND;TZID=America/Edmonton:20261014T113000',
+    'SUMMARY:B (moved)', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const evs = expandFeed(ics, { id: 'x' }, FROM, FROM + 4 * 86400000, TZ);
+  const a = evs.filter((e) => e.uid === 'a@example.test').map((e) => [iso(e.start), e.title]);
+  const b = evs.filter((e) => e.uid === 'b@example.test').map((e) => [iso(e.start), e.title]);
+  assert.deepEqual(a.map((x) => x[1]), ['A', 'A', 'A', 'A']);
+  assert.deepEqual(b, [
+    ['2026-10-12T15:00:00.000Z', 'B'],
+    ['2026-10-14T17:00:00.000Z', 'B (moved)'],
+    ['2026-10-15T15:00:00.000Z', 'B'],
+  ]);
+});

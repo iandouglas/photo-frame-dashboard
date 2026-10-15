@@ -4,16 +4,16 @@ import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, createHash } from 'node:crypto';
 import { loadConfig } from './config.js';
-import { parseFeed, expandParsed, mergeEvents, publicCalendars } from './calendar.js';
+import { parseFeed, expandParsedAsync, mergeEvents, publicCalendars } from './calendar.js';
 import { forecastUrl, mapForecast } from './weather.js';
 import { createTextFeed } from './textfeed.js';
 import { parseNews, mergeNews, fetchFeed } from './news.js';
-import { parseRange } from './range.js';
+import { parseRange, expansionWindow } from './range.js';
 import { PushStore, validatePushPayload, pushedEventsBetween, pushStatus, tokenMatches, LIMITS as PUSH_LIMITS } from './push.js';
 import { StateStore } from './state.js';
-import { offsetTable, startOfLocalDay } from './tz.js';
+import { offsetTable, startOfLocalDay, localDate } from './tz.js';
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const TYPES = {
@@ -37,12 +37,15 @@ function log(event, fields) {
 }
 
 // ------------------------------------------------------------ calendars
+//
+// Each refresh fetches and parses every feed, then expands each calendar ONCE over the whole
+// navigable window (range.js expansionWindow), cooperatively, so the event loop keeps serving
+// requests. Requests only filter those cached expansions; they never expand anything.
 
-const feeds = new Map(); // id -> { parsed, okAt, error, parseError }
-let events = [];
-let eventsWindow = null;
-let feedsVersion = 0; // bumps on every refresh; keys the ranged-request cache
-const rangeCache = new Map(); // "version|from|to" -> events, a few entries
+const feeds = new Map(); // id -> { parsed, hash, okAt, error, parseError }
+const expansions = new Map(); // id -> { parsed, from, to, list (sorted by start) }
+let win = null; // { day, from, to }: the current expansion window
+let expandGen = 0; // bumps when a newer expansion run supersedes the running one
 
 async function fetchText(url) {
   if (url.startsWith('file:') && process.env.ALLOW_FILE_FEEDS === '1') {
@@ -65,56 +68,89 @@ function errorCode(err) {
   return 'FETCH_FAILED';
 }
 
-/** Expand every cached calendar into [from, to) and merge. */
+function overlaps(e, from, to) {
+  return !(e.end < from || (e.end === from && e.start < from) || e.start >= to);
+}
+
+/**
+ * Events in [from, to) from the cached expansions, merged with pushed calendars.
+ * building: some calendar has no expansion covering the range yet (first fetch or expansion
+ * still running); the events that are ready are returned anyway.
+ */
 function eventsBetween(from, to) {
   const lists = [];
+  let building = false;
+  for (const cal of cfg.calendars) {
+    const feed = feeds.get(cal.id);
+    if (!feed) { building = true; continue; } // not fetched yet
+    const exp = expansions.get(cal.id);
+    if (feed.parsed && (!exp || exp.from > from || exp.to < to)) building = true;
+    if (exp) lists.push(exp.list.filter((e) => overlaps(e, from, to)));
+  }
+  for (const cal of cfg.pushCalendars) lists.push(pushedEventsBetween(pushStore.get(cal.id), cal, from, to));
+  return { events: mergeEvents(lists), building };
+}
+
+/** Move the expansion window when the local date changes; true when it moved. */
+function updateWindow(now) {
+  if (win && localDate(now, cfg.tz) === win.day) return false;
+  win = expansionWindow(now, cfg.tz, cfg.eventsDays);
+  return true;
+}
+
+/** Expand every calendar whose data or window changed. A newer call stops an older run. */
+async function expandCalendars() {
+  const gen = ++expandGen;
+  const w = win;
   for (const cal of cfg.calendars) {
     const feed = feeds.get(cal.id);
     if (!feed || !feed.parsed) continue;
+    const have = expansions.get(cal.id);
+    if (have && have.parsed === feed.parsed && have.from === w.from && have.to === w.to) continue;
+    const started = Date.now();
+    let r;
     try {
-      lists.push(expandParsed(feed.parsed, cal, from, to, cfg.tz));
+      r = await expandParsedAsync(feed.parsed, cal, w.from, w.to, cfg.tz, { shouldStop: () => gen !== expandGen });
     } catch (err) {
       log('calendar_expand_failed', { cal: cal.id, message: String(err && err.message).slice(0, 120) });
+      // Keep serving an older expansion if there is one; otherwise stop reporting "building".
+      if (!have) expansions.set(cal.id, { parsed: feed.parsed, from: w.from, to: w.to, list: [] });
+      continue;
     }
+    if (!r) return; // superseded by a newer refresh or window
+    r.events.sort((a, b) => a.start - b.start);
+    expansions.set(cal.id, { parsed: feed.parsed, from: w.from, to: w.to, list: r.events });
+    log('calendar_expanded', {
+      cal: cal.id, ms: Date.now() - started, events: r.events.length, masters: r.stats.masters,
+      skipped: r.stats.skipped, fastForwarded: r.stats.fastForwarded, iterations: r.stats.iterations,
+    });
   }
-  for (const cal of cfg.pushCalendars) lists.push(pushedEventsBetween(pushStore.get(cal.id), cal, from, to));
-  return mergeEvents(lists);
 }
 
-function rebuildEvents() {
-  const now = Date.now();
-  const from = startOfLocalDay(now, cfg.tz);
-  const to = from + cfg.eventsDays * 86400000;
-  events = eventsBetween(from, to);
-  eventsWindow = { from, to, builtAt: now };
-}
-
-/** Events for a requested window (agenda navigation), cached until the next feed refresh. */
-function eventsForRange(from, to) {
-  const key = feedsVersion + '|' + from + '|' + to;
-  let list = rangeCache.get(key);
-  if (!list) {
-    list = eventsBetween(from, to);
-    if (rangeCache.size >= 16) rangeCache.delete(rangeCache.keys().next().value);
-    rangeCache.set(key, list);
-  }
-  return list;
+function startExpansion() {
+  expandCalendars().catch((err) => log('calendar_expand_failed', { message: String(err && err.message).slice(0, 120) }));
 }
 
 async function refreshCalendars() {
+  let changed = 0;
   await Promise.all(cfg.calendars.map(async (cal) => {
     const feed = feeds.get(cal.id) || {};
     try {
       const text = await fetchText(cal.url);
       feed.okAt = Date.now();
       feed.error = null;
-      try {
-        // Parse once per fetch; any date range is expanded from this.
-        feed.parsed = parseFeed(text);
-        feed.parseError = null;
-      } catch (err) {
-        feed.parseError = 'PARSE_FAILED';
-        log('calendar_parse_failed', { cal: cal.id, message: String(err && err.message).slice(0, 120) });
+      const hash = createHash('sha256').update(text).digest('hex');
+      if (hash !== feed.hash || !feed.parsed) {
+        try {
+          // Parse once per change; every date range is served from its expansion.
+          feed.parsed = parseFeed(text);
+          feed.hash = hash;
+          feed.parseError = null;
+          changed++;
+        } catch (err) {
+          feed.parseError = 'PARSE_FAILED';
+          log('calendar_parse_failed', { cal: cal.id, message: String(err && err.message).slice(0, 120) });
+        }
       }
     } catch (err) {
       feed.error = errorCode(err);
@@ -122,10 +158,9 @@ async function refreshCalendars() {
     }
     feeds.set(cal.id, feed);
   }));
-  feedsVersion++;
-  rangeCache.clear();
-  rebuildEvents();
-  log('calendars_refreshed', { calendars: cfg.calendars.length, events: events.length });
+  updateWindow(Date.now());
+  log('calendars_refreshed', { calendars: cfg.calendars.length, changed });
+  startExpansion();
 }
 
 function calendarStatus() {
@@ -134,13 +169,6 @@ function calendarStatus() {
     const f = feeds.get(c.id) || {};
     return { id: c.id, okAt: f.okAt || null, error: f.parseError || f.error || null };
   }).concat(cfg.pushCalendars.map((c) => pushStatus(c, pushStore.get(c.id), now, cfg.pushStaleMinutes)));
-}
-
-/** A pushed snapshot replaces the calendar's events; ranged caches are rebuilt from it. */
-function onPushed() {
-  feedsVersion++;
-  rangeCache.clear();
-  rebuildEvents();
 }
 
 // ------------------------------------------------------------ weather
@@ -272,8 +300,10 @@ async function handle(req, res) {
   if (req.method === 'GET' && path === '/healthz') return send(res, 200, { ok: true });
 
   if (req.method === 'GET' && path === '/api/events') {
+    if (updateWindow(now)) startExpansion(); // first request after midnight
     const range = parseRange(url.searchParams, now, cfg.tz, cfg.eventsDays);
     if (range) {
+      const r = eventsBetween(range.from, range.to);
       return send(res, 200, {
         ...timeInfo(now, range.from - 86400000, range.to + 86400000),
         from: range.fromDate,
@@ -281,16 +311,20 @@ async function handle(req, res) {
         calendars: publicCalendars(allCalendars),
         status: calendarStatus(),
         alert: cfg.alert,
-        events: eventsForRange(range.from, range.to),
+        building: r.building,
+        events: r.events,
       });
     }
-    if (!eventsWindow || startOfLocalDay(now, cfg.tz) !== eventsWindow.from) rebuildEvents();
+    const from = startOfLocalDay(now, cfg.tz);
+    const to = from + cfg.eventsDays * 86400000;
+    const r = eventsBetween(from, to);
     return send(res, 200, {
-      ...timeInfo(now, eventsWindow.from - 86400000, eventsWindow.to + 86400000),
+      ...timeInfo(now, from - 86400000, to + 86400000),
       calendars: publicCalendars(allCalendars),
       status: calendarStatus(),
       alert: cfg.alert,
-      events,
+      building: r.building,
+      events: r.events,
     });
   }
 
@@ -317,7 +351,6 @@ async function handle(req, res) {
     const body = await readBody(req, PUSH_LIMITS.maxBody);
     const events = validatePushPayload(body, cfg.tz, now);
     pushStore.put(cal.id, events, now);
-    onPushed();
     log('calendar_pushed', { cal: cal.id, events: events.length });
     return send(res, 200, { ok: true, events: events.length, receivedAt: now });
   }
@@ -364,6 +397,8 @@ server.listen(cfg.port, cfg.host, () => {
 
 refreshCalendars();
 setInterval(refreshCalendars, cfg.refreshMinutes * 60000).unref();
+// Move the expansion window at local midnight even when nothing asks for events.
+setInterval(() => { if (updateWindow(Date.now())) startExpansion(); }, 60000).unref();
 refreshWeather();
 if (cfg.newsFeeds.length) {
   refreshNews();

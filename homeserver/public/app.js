@@ -7,6 +7,7 @@
   var POLL_EVENTS = 60000, POLL_STATE = 10000, POLL_WEATHER = 10 * MIN, POLL_TEXT = 15000;
   var HOURLY_IDLE = MIN; // the hourly view returns to the 10-day list after this long untouched
   var POLL_NEWS = 5 * MIN;
+  var BUILDING_RETRY = 3000; // the server is still expanding calendars: ask again soon
   var AGENDA_IDLE = 2 * MIN; // a browsed day returns to today after this long untouched
   var NAV_BACK = -30, NAV_AHEAD = 90, NAV_DAYS = 14; // match the server's /api/events bounds
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -14,7 +15,7 @@
 
   var S = {
     skew: 0, offsets: [[0, 0]], calendars: [], calById: {}, alertCals: {}, alertOpts: null,
-    events: [], status: [], weather: null, pomodoro: null, acks: {},
+    events: [], eventsBuilding: false, buildingTimer: null, status: [], weather: null, pomodoro: null, acks: {},
     online: true, agendaMinute: -1, lastAlertKey: null, pomoDoneShown: null, editing: null,
     wxDay: null, wxTouched: 0, text: null,
     navDay: null, navData: null, navTouched: 0, // agenda day browsing (null = today)
@@ -104,7 +105,11 @@
       }
       S.alertOpts = d.alert;
       S.events = d.events || [];
+      S.eventsBuilding = !!d.building;
       S.status = d.status || [];
+      if (d.building && !S.buildingTimer) {
+        S.buildingTimer = setTimeout(function () { S.buildingTimer = null; loadEvents(); }, BUILDING_RETRY);
+      }
       renderLegend();
       renderAgenda();
       tick();
@@ -119,8 +124,9 @@
   function loadNavDay(day) {
     request('GET', 'api/events?from=' + isoDay(day) + '&days=' + NAV_DAYS, null, function (err, d) {
       if (err || !d || S.navDay !== day) return; // a later tap moved on
-      S.navData = { day: day, events: d.events || [] };
+      S.navData = { day: day, events: d.events || [], building: !!d.building };
       renderAgenda();
+      if (d.building) setTimeout(function () { if (S.navDay === day) loadNavDay(day); }, BUILDING_RETRY);
     });
   }
   function loadWeather() {
@@ -162,6 +168,7 @@
     var today = dayNumber(t);
     var start = S.navDay === null ? today : S.navDay;
     var list = S.navDay === null ? S.events : (S.navData && S.navData.day === start ? S.navData.events : null);
+    var building = S.navDay === null ? S.eventsBuilding : !!(S.navData && S.navData.building);
     renderNav(start, today);
     if (!list) { $('agenda').innerHTML = '<p class="empty">Loading…</p>'; return; }
     var groups = {}, order = [];
@@ -198,7 +205,7 @@
       }
       for (var k = 0; k < grp.timed.length; k++) html += eventRow(grp.timed[k], t);
       if (day === start && !grp.allDay.length && !grp.timed.length) {
-        html += '<p class="empty">' + (day === today ? 'Nothing else today' : 'Nothing scheduled') + '</p>';
+        html += '<p class="empty">' + (building ? 'Loading…' : day === today ? 'Nothing else today' : 'Nothing scheduled') + '</p>';
       }
     }
     $('agenda').innerHTML = html;
