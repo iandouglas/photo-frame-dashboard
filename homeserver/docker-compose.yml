@@ -33,6 +33,9 @@ services:
       # Optional News tab: JSON [{"name","url"}] of RSS/Atom feeds (see .env.example)
       NEWS_FEEDS: ${NEWS_FEEDS:-}
       NEWS_MINUTES: ${NEWS_MINUTES:-10}
+      # Optional calendars pushed from a Mac (see push-macos/): JSON with a token per calendar
+      PUSH_CALENDARS: ${PUSH_CALENDARS:-}
+      PUSH_STALE_MINUTES: ${PUSH_STALE_MINUTES:-60}
       # Optional night schedule, e.g. 22:30 and 06:30 (both empty = none)
       SCREEN_OFF_FROM: ${SCREEN_OFF_FROM:-}
       SCREEN_OFF_TO: ${SCREEN_OFF_TO:-}
