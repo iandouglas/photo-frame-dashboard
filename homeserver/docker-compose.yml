@@ -7,6 +7,8 @@ services:
     build:
       context: .
     image: frame-homeserver:local
+    # Rebuild on every deploy, so Portainer's Pull and redeploy picks up new code.
+    pull_policy: build
     container_name: frame-homeserver
     restart: unless-stopped
     ports:
