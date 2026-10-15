@@ -9,15 +9,15 @@
   var POLL_NEWS = 5 * MIN;
   var BUILDING_RETRY = 3000; // the server is still expanding calendars: ask again soon
   var AGENDA_IDLE = 2 * MIN; // a browsed day returns to today after this long untouched
-  var NAV_BACK = -30, NAV_AHEAD = 90, NAV_DAYS = 14; // match the server's /api/events bounds
+  var NAV_BACK = -30, NAV_AHEAD = 90; // match the server's /api/events bounds
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
   var S = {
     skew: 0, offsets: [[0, 0]], calendars: [], calById: {}, alertCals: {}, alertOpts: null,
-    events: [], eventsBuilding: false, buildingTimer: null, status: [], weather: null, pomodoro: null, acks: {},
+    events: [], following: null, eventsBuilding: false, buildingTimer: null, status: [], weather: null, pomodoro: null, acks: {},
     online: true, agendaMinute: -1, lastAlertKey: null, pomoDoneShown: null, editing: null,
-    wxDay: null, wxTouched: 0, text: null,
+    wxDay: null, wxTouched: 0, text: null, textStale: false, textH: -1,
     navDay: null, navData: null, navTouched: 0, // agenda day browsing (null = today)
     news: null, newsOn: false, tab: savedTab(), clockHM: '', clockSec: '', clockAmPm: '',
     flashing: false,
@@ -105,6 +105,7 @@
       }
       S.alertOpts = d.alert;
       S.events = d.events || [];
+      S.following = d.following || null;
       S.eventsBuilding = !!d.building;
       S.status = d.status || [];
       if (d.building && !S.buildingTimer) {
@@ -122,7 +123,7 @@
     return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
   }
   function loadNavDay(day) {
-    request('GET', 'api/events?from=' + isoDay(day) + '&days=' + NAV_DAYS, null, function (err, d) {
+    request('GET', 'api/events?from=' + isoDay(day) + '&days=1', null, function (err, d) {
       if (err || !d || S.navDay !== day) return; // a later tap moved on
       S.navData = { day: day, events: d.events || [], building: !!d.building };
       renderAgenda();
@@ -163,6 +164,8 @@
     $('legend').innerHTML = html;
   }
 
+  // Today: what is left of today, then the first event of the next day that has any.
+  // Another day (‹ ›): that whole day, past events included.
   function renderAgenda() {
     var t = now();
     var today = dayNumber(t);
@@ -171,42 +174,18 @@
     var building = S.navDay === null ? S.eventsBuilding : !!(S.navData && S.navData.building);
     renderNav(start, today);
     if (!list) { $('agenda').innerHTML = '<p class="empty">Loading…</p>'; return; }
-    var groups = {}, order = [];
-    function group(day) {
-      if (!groups[day]) { groups[day] = { allDay: [], timed: [] }; order.push(day); }
-      return groups[day];
-    }
-    for (var i = 0; i < list.length; i++) {
-      var e = list[i];
-      if (start === today) {
-        if (e.end <= t && !(e.allDay && dayNumber(e.start) === today)) continue;
-      } else if (dayNumber(e.end - 1) < start) continue;
-      if (e.allDay) {
-        // Multi-day all-day events appear on each remaining day they cover.
-        var first = Math.max(dayNumber(e.start), start), last = dayNumber(e.end - 1);
-        for (var d = first; d <= last && d < start + 14; d++) group(d).allDay.push(e);
-      } else {
-        group(Math.max(dayNumber(e.start), start)).timed.push(e);
-      }
-    }
-    group(start); // always show the first day, even when it is empty
-    order.sort(function (a, b) { return a - b; });
+    if (S.navDay === null && S.following) list = list.concat([S.following]);
+    var v = L.agendaDay(list, start, today, t, dayNumber);
 
     var html = '';
-    for (var g = 0; g < order.length; g++) {
-      var day = order[g], grp = groups[day];
-      // The first day's heading is the navigation bar above the list.
-      if (day !== start) {
-        var rd = relDay(dayMs(day));
-        html += '<div class="day-head"><b>' + rd.label + '</b> · ' + rd.date + '</div>';
-      }
-      for (var a = 0; a < grp.allDay.length; a++) {
-        html += '<span class="allday" style="background:' + calColor(grp.allDay[a].cal) + '">' + esc(grp.allDay[a].title) + '</span>';
-      }
-      for (var k = 0; k < grp.timed.length; k++) html += eventRow(grp.timed[k], t);
-      if (day === start && !grp.allDay.length && !grp.timed.length) {
-        html += '<p class="empty">' + (building ? 'Loading…' : day === today ? 'Nothing else today' : 'Nothing scheduled') + '</p>';
-      }
+    for (var a = 0; a < v.allDay.length; a++) html += allDayChip(v.allDay[a]);
+    for (var k = 0; k < v.timed.length; k++) html += eventRow(v.timed[k], t);
+    if (!v.allDay.length && !v.timed.length) {
+      html += '<p class="empty">' + (building ? 'Loading…' : start === today ? 'Nothing else today' : 'Nothing scheduled') + '</p>';
+    }
+    if (v.next) {
+      html += '<div class="day-head">' + nextDayLabel(v.next.day, today) + '</div>';
+      html += v.next.event.allDay ? allDayChip(v.next.event) : eventRow(v.next.event, t);
     }
     $('agenda').innerHTML = html;
 
@@ -217,6 +196,17 @@
     }
     $('calStatus').textContent = bad.join(' · ');
     S.agendaMinute = Math.floor(t / MIN);
+  }
+
+  function allDayChip(e) {
+    return '<span class="allday" style="background:' + calColor(e.cal) + '">' + esc(e.title) + '</span>';
+  }
+
+  // "Tomorrow", or "Mon Oct 19".
+  function nextDayLabel(day, today) {
+    if (day === today + 1) return '<b>Tomorrow</b>';
+    var w = wall(dayMs(day));
+    return '<b>' + DAYS[w.getUTCDay()].slice(0, 3) + '</b> ' + MONTHS[w.getUTCMonth()].slice(0, 3) + ' ' + w.getUTCDate();
   }
 
   // Noon of a day number, as an instant (safe across DST changes).
@@ -444,12 +434,13 @@
       if (d && d.title) { $('textTitle').textContent = d.title; $('textTitle').className = 'card-label'; }
       if (err || !d || typeof d.text !== 'string') {
         // Keep the last text; just mark it as old.
-        if (S.text !== null) fitText(true);
+        if (S.text !== null) { S.textStale = true; fitText(true); }
         return;
       }
       card.className = 'card text-card';
       if (d.text !== S.text) { S.text = d.text; $('textBody').textContent = d.text; }
-      fitText(!!d.stale);
+      S.textStale = !!d.stale;
+      fitText(S.textStale);
     });
   }
   // Use the largest font size at which the text fits the card (the card's height depends on
@@ -474,11 +465,16 @@
     if (a.phase === 'none') {
       body.innerHTML = '<p class="empty">Nothing coming up</p>';
     } else {
+      // One line for when and where ("Tomorrow · 10:00 AM · Work"), the title below it, and a
+      // countdown only once it is close.
       var e = a.event;
-      var count = a.phase === 'upcoming' ? relDay(e.start).label + ' ' + fmtTime(e.start)
-        : a.msUntil > 0 ? 'in ' + fmtCountdown(a.msUntil) : 'started';
-      body.innerHTML = '<div class="alert-title">' + esc(e.title) + '</div><div class="alert-sub">' +
-        fmtTime(e.start) + ' · ' + esc(calName(e.cal)) + '</div><div class="alert-count' + (a.phase === 'upcoming' ? ' is-later' : '') + '">' + count + '</div>';
+      var diff = dayNumber(e.start) - dayNumber(t);
+      var ew = wall(e.start);
+      var day = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow'
+        : DAYS[ew.getUTCDay()].slice(0, 3) + ' ' + MONTHS[ew.getUTCMonth()].slice(0, 3) + ' ' + ew.getUTCDate();
+      var count = a.phase === 'upcoming' ? '' : a.msUntil > 0 ? 'in ' + fmtCountdown(a.msUntil) : 'started';
+      body.innerHTML = '<div class="alert-meta">' + day + ' · ' + fmtTime(e.start) + ' · ' + esc(calName(e.cal)) + '</div>' +
+        '<div class="alert-title">' + esc(e.title) + '</div>' + (count ? '<div class="alert-count">' + count + '</div>' : '');
     }
 
     S.flashing = a.phase === 'flash';
@@ -640,9 +636,18 @@
     $('date').textContent = DAYS[w.getUTCDay()] + ', ' + MONTHS[w.getUTCMonth()] + ' ' + w.getUTCDate();
   }
 
+  // The text card takes whatever height the cards above leave; refit when that changes.
+  function refitText() {
+    var h = $('textBody').clientHeight;
+    if (h === S.textH) return;
+    S.textH = h;
+    if (S.text !== null) fitText(S.textStale);
+  }
+
   function tick() {
     renderClock();
     renderAlert();
+    refitText();
     screenTick();
     if (!S.editing) renderPomodoro();
     if (Math.floor(now() / MIN) !== S.agendaMinute) { renderAgenda(); updateNewsTimes(); }
@@ -662,7 +667,7 @@
   $('pomoSettings').addEventListener('click', onSettingsTap);
   $('wxDays').addEventListener('click', onDaysTap);
   if (bridge) {
-    $('btnSettings').className = 'tool-btn';
+    $('btnSettings').className = 'clock-btn';
     $('btnSettings').addEventListener('click', function () { bridge.openSettings(); });
   }
   $('btnSleep').addEventListener('click', function () { S.screen.manual = true; setScreen(false); });

@@ -12,10 +12,10 @@ container settings.
 
 | Column | Shows |
 | --- | --- |
-| Agenda | The next 14 days from all calendars, colour-coded. A meeting that is on two of your calendars appears once ("Work + Home"). Declined and cancelled events are hidden. **‹ ›** beside the day step a day back or forward (30 days back, 90 ahead); tap the day to return to today, which also happens after 2 minutes untouched |
+| Agenda | Today from all calendars, colour-coded: all-day events, then what hasn't ended yet (finished events drop off as they end), then below a divider the first event of the next day that has any ("Tomorrow" or "Mon Oct 19"). A meeting that is on two of your calendars appears once ("Work + Home"). Declined and cancelled events are hidden. **‹ ›** beside the day step a day back or forward (30 days back, 90 ahead) and show that whole day; tap the day to return to today, which also happens after 2 minutes untouched |
 | News | Optional (`NEWS_FEEDS`): an **Agenda \| News** switch at the top of the left column. Headlines from your RSS/Atom feeds, newest first, with the source and "12m ago". Text only: nothing opens on the frame. The frame remembers which tab you left it on |
-| Now | Clock with seconds, date, current weather, sunrise and sunset, a 10-day forecast ([Open-Meteo](https://open-meteo.com/), no API key). Tap a day for its hourly forecast |
-| Tools | **Next meeting** from the calendars marked `alert`, with a countdown from 15 minutes out. **Pomodoro** with start/pause, skip, reset and on-screen settings. An optional **text card** (see `TEXT_FEED_URL`) |
+| Now | Clock with seconds (screen-off and Settings buttons in its corner), date, current weather, sunrise and sunset, a 10-day forecast ([Open-Meteo](https://open-meteo.com/), no API key). Tap a day for its hourly forecast |
+| Tools | **Next meeting** from the calendars marked `alert` (day, time and calendar on one line, the title below), with a countdown from 15 minutes out. **Pomodoro** with start/pause, skip, reset and on-screen settings. An optional **text card** (see `TEXT_FEED_URL`) |
 
 **Meeting alert:** 2 minutes before an event on an `alert` calendar, the whole screen flashes red
 until someone taps **ACK**. The ACK is saved on the server, so a reload or a second screen doesn't
@@ -244,7 +244,7 @@ navigation, and the status line, which shows when it was last updated.
 
 ## Screen off, night schedule and Settings
 
-The top of the right column has two buttons:
+The top-right corner of the clock has two small buttons:
 
 - **Moon:** turns the screen off. In the Home HQ kiosk this switches the frame's backlight off
   (see the [kiosk guide](../dashboard/kiosk/README.md#screen-off-and-settings-from-the-page-windowhomehq);
@@ -301,6 +301,7 @@ The log line `calendar_expanded` gives the time and occurrence count per calenda
 
 API, for scripts and phones: `GET /api/events` (optionally `?from=YYYY-MM-DD&days=1..14`, within
 30 days back and 90 ahead; `building: true` while calendars are still being expanded after a
-refresh, with whatever is ready), `GET /api/news` (404 `NOT_CONFIGURED` when unset), `GET /api/weather` (with `days[].hours`),
+refresh, with whatever is ready; without `from`, `following` is the first event after the
+default window), `GET /api/news` (404 `NOT_CONFIGURED` when unset), `GET /api/weather` (with `days[].hours`),
 `GET /api/text` (404 `NOT_CONFIGURED` when unset), `GET /api/state`,
 `POST /api/ack {"key"}`, `POST /api/pomodoro {"settings"?, "run"?}`.

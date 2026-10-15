@@ -90,3 +90,47 @@ test('pomodoro: skip moves to the next phase without running it', () => {
   assert.equal(run.phase, 'short');
   assert.equal(L.pomodoroView(run, s, T0).remainingMs, 5 * MIN);
 });
+
+// ------------------------------------------------------------ agenda day view
+
+test('agenda today: what is left of today, then the first event of the next day with any', () => {
+  const H = 60 * MIN, DAY = 24 * H;
+  const dayOf = (ms) => Math.floor(ms / DAY); // UTC days are fine for the logic
+  const today = dayOf(T0), mid = today * DAY; // T0 is 16:00 UTC
+  const e = (id, start, end, allDay) => ({ uid: id, cal: 'work', start, end, allDay: !!allDay });
+  const ids = (l) => Array.from(l, (x) => x.uid); // arrays from the other realm, as plain ones
+  const list = [
+    e('ended', mid + 9 * H, mid + 10 * H),
+    e('running', T0 - 30 * MIN, T0 + 30 * MIN),
+    e('later', mid + 20 * H, mid + 21 * H),
+    e('allday', mid, mid + DAY, true),
+    e('trip', mid - DAY, mid + 2 * DAY, true), // multi-day, covers today
+    e('overnight', mid - 2 * H, mid + 1 * H), // from yesterday, already over
+    e('d3-late', mid + 3 * DAY + 15 * H, mid + 3 * DAY + 16 * H),
+    e('d3-early', mid + 3 * DAY + 8 * H, mid + 3 * DAY + 9 * H),
+    e('d5-allday', mid + 5 * DAY, mid + 6 * DAY, true),
+  ];
+  const v = L.agendaDay(list, today, today, T0, dayOf);
+  assert.deepEqual(ids(v.allDay), ['trip', 'allday']);
+  assert.deepEqual(ids(v.timed), ['running', 'later']);
+  // The trip covers tomorrow too, but it started earlier: the next day is the first one on
+  // which an event starts, and the part shows that day's earliest event.
+  assert.equal(v.next.day, today + 3);
+  assert.equal(v.next.event.uid, 'd3-early');
+
+  // An all-day event comes first on its day.
+  const withAllDay = list.concat([e('d3-allday', mid + 3 * DAY, mid + 4 * DAY, true)]);
+  assert.equal(L.agendaDay(withAllDay, today, today, T0, dayOf).next.event.uid, 'd3-allday');
+
+  // Nothing later in the list: no next part.
+  assert.equal(L.agendaDay(list.slice(0, 6), today, today, T0, dayOf).next, null);
+  // Once "running" ends it drops off (the UI re-renders every minute).
+  assert.deepEqual(ids(L.agendaDay(list, today, today, T0 + 31 * MIN, dayOf).timed), ['later']);
+
+  // Another day: everything on it, ended or not, and no next part.
+  const past = L.agendaDay(list, today - 1, today, T0, dayOf);
+  assert.deepEqual(ids(past.allDay), ['trip']);
+  assert.deepEqual(ids(past.timed), ['overnight']);
+  assert.equal(past.next, null);
+  assert.deepEqual(ids(L.agendaDay(list, today + 3, today, T0, dayOf).timed), ['d3-early', 'd3-late']);
+});

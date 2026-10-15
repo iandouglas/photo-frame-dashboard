@@ -91,6 +91,38 @@ function eventsBetween(from, to) {
   return { events: mergeEvents(lists), building };
 }
 
+/**
+ * The first event starting at or after `ms` (all-day first on a tie), from the cached expansions
+ * and pushed calendars, or null. Lets the agenda show "the next day with events" even when that
+ * is beyond the default window. Lists are sorted by start, so this is a binary search each.
+ */
+function firstEventFrom(ms) {
+  const found = [];
+  for (const cal of cfg.calendars) {
+    const exp = expansions.get(cal.id);
+    if (!exp) continue;
+    const list = exp.list;
+    let lo = 0, hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid].start < ms) lo = mid + 1;
+      else hi = mid;
+    }
+    // Several events can share that start; keep them all so the merge picks consistently.
+    for (let i = lo; i < list.length && list[i].start === list[lo].start; i++) found.push(list[i]);
+  }
+  for (const cal of cfg.pushCalendars) {
+    const snap = pushStore.get(cal.id);
+    if (!snap) continue;
+    let best = null;
+    for (const e of snap.events) if (e.start >= ms && (!best || e.start < best.start)) best = e;
+    if (best) found.push(...pushedEventsBetween({ events: [best] }, cal, best.start, best.start + 1));
+  }
+  if (!found.length) return null;
+  const merged = mergeEvents([found]);
+  return merged[0];
+}
+
 /** Move the expansion window when the local date changes; true when it moved. */
 function updateWindow(now) {
   if (win && localDate(now, cfg.tz) === win.day) return false;
@@ -325,6 +357,7 @@ async function handle(req, res) {
       alert: cfg.alert,
       building: r.building,
       events: r.events,
+      following: firstEventFrom(to), // the first event after this window (agenda "next day")
     });
   }
 

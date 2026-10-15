@@ -218,4 +218,10 @@ test('/healthz answers promptly while a large feed is being expanded', async () 
   }
   console.log(`# worst ranged /api/events after expansion: ${Math.round(worst)} ms`);
   assert.ok(worst < 300);
+
+  // The default window also names the first event after it, for the agenda's "next day" line.
+  const def = (await timed('/api/events')).body;
+  const lastStart = Math.max(...def.events.map((e) => e.start));
+  assert.ok(def.following && def.following.start > lastStart, 'following is after the default window');
+  assert.ok(def.following.start - lastStart < 2 * D);
 });
