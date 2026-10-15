@@ -58,15 +58,106 @@ h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #
 .legend span { margin-left: 12px; white-space: nowrap; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 5px; margin-right: 5px; vertical-align: middle; }
 
-.agenda {
+/* Left column: one pane at a time (Agenda or News), each a rounded panel that fills the column. */
+.pane {
   -webkit-flex: 1;
   flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  min-height: 0;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+}
+.panel {
+  -webkit-flex: 1;
+  flex: 1;
+  min-height: 0;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
   background: #FBF9F4;
   border-radius: 18px;
-  padding: 6px 18px 12px;
+  overflow: hidden;
 }
+.agenda, .news {
+  -webkit-flex: 1;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 18px 12px;
+}
+
+/* Agenda | News segmented control (only when NEWS_FEEDS is set). */
+.seg {
+  display: -webkit-flex;
+  display: flex;
+  background: #E8E2D5;
+  border-radius: 12px;
+  padding: 3px;
+}
+.seg button {
+  min-width: 112px;
+  height: 48px;
+  border-radius: 9px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: #3B3934;
+}
+.seg button.is-on { background: #FBF9F4; color: #111111; box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+
+/* Day navigation: ‹  Today · Oct 14  › */
+.agenda-nav {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-flex: none;
+  flex: none;
+  height: 56px;
+  border-bottom: 1px solid #D6CFC0;
+  margin: 0 6px;
+}
+.nav-btn {
+  width: 56px;
+  height: 52px;
+  color: #3B6FD8;
+  -webkit-flex: none;
+  flex: none;
+  padding-top: 4px;
+  border-radius: 10px;
+}
+.nav-btn:active, .nav-day:active { background: #E8E2D5; }
+.nav-btn[disabled] { color: #D6CFC0; }
+.nav-day {
+  -webkit-flex: 1;
+  flex: 1;
+  height: 52px;
+  border-radius: 10px;
+  font-size: 15px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #7A756B;
+}
+.nav-day b { color: #111111; letter-spacing: .02em; }
+.nav-day.is-away b { color: #3B6FD8; }
+.nav-day small { display: block; font-size: 12px; letter-spacing: .04em; text-transform: none; color: #3B6FD8; margin-top: 2px; }
+
+/* News */
+.news-item { padding: 12px 0; border-bottom: 1px solid #E8E2D5; }
+.news-item:last-child { border-bottom: 0; }
+.news-title {
+  font-size: 19px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.news-meta { font-size: 14px; color: #7A756B; margin-top: 4px; }
+.news-meta b { font-weight: 600; color: #3B3934; }
 .day-head {
   font-size: 15px;
   letter-spacing: .08em;
@@ -103,8 +194,30 @@ h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #
 .status { font-size: 14px; color: #C2410C; min-height: 18px; padding-top: 6px; }
 
 /* ---------------------------------------------------------------- clock + weather */
-.clock { font-size: 112px; font-weight: 300; line-height: 1; letter-spacing: -.03em; }
-.clock small { font-size: 32px; letter-spacing: 0; margin-left: 6px; }
+/* Clock: seconds at half the digit height, stacked above AM/PM. Fixed-width seconds and tabular
+   figures, so ticking every second never moves anything. */
+.clock {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: flex-start;
+  align-items: flex-start;
+  font-size: 112px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -.03em;
+  -webkit-font-feature-settings: "tnum";
+  font-feature-settings: "tnum";
+}
+.clock-side {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  margin: 8px 0 0 10px;
+  letter-spacing: 0;
+}
+.clock-sec { font-size: 56px; line-height: 1; width: 64px; color: #3B3934; }
+.clock-ampm { font-size: 28px; line-height: 1; margin-top: 6px; }
 .date { font-size: 26px; color: #3B3934; margin: 6px 0 16px; }
 
 .wx-now {

@@ -12,8 +12,9 @@ container settings.
 
 | Column | Shows |
 | --- | --- |
-| Agenda | The next 14 days from all calendars, colour-coded. A meeting that is on two of your calendars appears once ("Work + Home"). Declined and cancelled events are hidden |
-| Now | Clock and date, current weather, sunrise and sunset, a 10-day forecast ([Open-Meteo](https://open-meteo.com/), no API key). Tap a day for its hourly forecast |
+| Agenda | The next 14 days from all calendars, colour-coded. A meeting that is on two of your calendars appears once ("Work + Home"). Declined and cancelled events are hidden. **‹ ›** beside the day step a day back or forward (30 days back, 90 ahead); tap the day to return to today, which also happens after 2 minutes untouched |
+| News | Optional (`NEWS_FEEDS`): an **Agenda \| News** switch at the top of the left column. Headlines from your RSS/Atom feeds, newest first, with the source and "12m ago". Text only: nothing opens on the frame. The frame remembers which tab you left it on |
+| Now | Clock with seconds, date, current weather, sunrise and sunset, a 10-day forecast ([Open-Meteo](https://open-meteo.com/), no API key). Tap a day for its hourly forecast |
 | Tools | **Next meeting** from the calendars marked `alert`, with a countdown from 15 minutes out. **Pomodoro** with start/pause, skip, reset and on-screen settings. An optional **text card** (see `TEXT_FEED_URL`) |
 
 **Meeting alert:** 2 minutes before an event on an `alert` calendar, the whole screen flashes red
@@ -37,24 +38,67 @@ displayed, not run. If the site is down, the last text stays up in grey. Leave t
 start it from a phone browser on the same URL. When a phase ends, the card pulses for 8 seconds
 and the button offers the next phase (a long break after every 4th focus session by default).
 
-## 1. Get each calendar's secret iCal address
+## 1. Getting your Google Calendar iCal addresses
 
-Do this for each calendar, signed in to the account that owns it (work, personal Gmail, home
-Workspace):
+The server reads each calendar through its **secret iCal address**: a private link that Google
+keeps up to date. Get one per calendar you want on the frame (for example work, personal Gmail and
+a home Workspace calendar). Do it on a computer; the phone app doesn't show these settings.
 
-1. Open Google Calendar on a computer → **Settings** (gear) → under **Settings for my calendars**,
-   click the calendar.
-2. Scroll to **Integrate calendar** → **Secret address in iCal format** → copy. It looks like
+1. Open [calendar.google.com](https://calendar.google.com) in a browser, signed in to the account
+   that **owns** the calendar.
+2. In the left sidebar, under **My calendars**, hover over the calendar.
+3. Click the **⋮** (three dots) that appears → **Settings and sharing**.
+4. Scroll down to **Integrate calendar**.
+5. Copy **Secret address in iCal format**. It looks like
    `https://calendar.google.com/calendar/ical/…/private-…/basic.ics`.
+   Do **not** use "Public address in iCal format": that one only works for calendars made public
+   to the whole internet.
+6. Repeat for each calendar and account.
 
-> **This link is a password.** Anyone with it can read every event on that calendar, with
-> titles, attendees and meeting links, without signing in. Don't put it in a URL shortener, a
-> chat, a repo or a screenshot, and don't type it into the frame. If it leaks, click **Reset** next
-> to it in Google Calendar to make a new one.
+> **Treat each secret address as a password.** Anyone with it can read every event on that
+> calendar, with titles, attendees and meeting links, without signing in. Don't put it in a URL
+> shortener, a chat, a repo, a screenshot or the frame itself. The **Reset** button next to it,
+> in the same place, revokes the old link and makes a new one; then update `CALENDARS`.
 
-If **Secret address in iCal format** is missing, the Workspace admin has turned it off (common on
-work accounts). Then use `busyOnly` on a different feed, or ask your admin; this server cannot sign
-in to Google on its own.
+### If "Secret address in iCal format" is missing (Workspace accounts)
+
+On work and other Google Workspace accounts the field can be missing, because the admin has
+turned off sharing calendars outside the organisation. An admin can allow it in the
+**Admin console → Apps → Google Workspace → Calendar → Sharing settings → External sharing
+options** ("Allow users to share their calendars"); many companies won't.
+
+What still works without it:
+
+- **Share the work calendar with your personal account.** In the work calendar's
+  **Settings and sharing → Share with specific people**, add your personal Gmail address with
+  "See only free/busy" or "See all event details" (whatever your company allows). This server
+  can't read a calendar that is only *shared with* or *subscribed to* by another account: Google
+  shows no secret address for those. So this helps only if your company lets the work account
+  produce its own secret address, or if you mirror the events some other way.
+- If you do get a work feed in, add `"busyOnly": true` to show "Busy" instead of titles.
+- Otherwise, a small script on the work laptop that pushes busy times to the server would be the
+  way; that isn't part of this project yet.
+
+### Put them into Portainer
+
+`CALENDARS` is **one line** of JSON, a list with one entry per calendar. Write it in a text editor
+first:
+
+```json
+[
+  {"id":"work","name":"Work","url":"PASTE-WORK-SECRET-ADDRESS","color":"#3B6FD8","alert":true,"busyOnly":true},
+  {"id":"personal","name":"Personal","url":"PASTE-PERSONAL-SECRET-ADDRESS","color":"#00A36C"},
+  {"id":"home","name":"Home","url":"PASTE-HOME-SECRET-ADDRESS","color":"#C2410C","alert":true}
+]
+```
+
+then remove the line breaks so it is a single line (`[{"id":"work",…},{"id":"personal",…}]`),
+and paste that as the value of `CALENDARS` in the stack's **Environment variables**. Click
+**Update the stack**. The server reads the calendars at start-up and again every
+`REFRESH_MINUTES` (5 by default), so later changes inside Google show up within that time; changes
+to `CALENDARS` itself take effect when you update the stack. If one calendar fails, the agenda
+names it and the reason (for example `HTTP_404` after a **Reset**); the address itself is never
+logged or shown.
 
 ## 2. Deploy on the NAS with Portainer
 
@@ -95,7 +139,30 @@ Pomodoro settings and ACKs are kept in the `frame-data` volume.
 Other settings, all optional: `HOST_PORT` (8088), `TZ`, `LAT`/`LON`/`LOCATION_NAME` (no default; weather stays off until set),
 `UNITS` (`imperial` or `metric`), `REFRESH_MINUTES` (5), `EVENTS_DAYS` (14), `ALERT_LEAD_MIN` (2),
 `ALERT_COUNTDOWN_MIN` (15), `ALERT_GRACE_MIN` (10), `WRITE_TOKEN` (see below), `TEXT_FEED_URL`
-and `TEXT_FEED_TITLE` (no default; the text card stays hidden until set).
+and `TEXT_FEED_TITLE` (no default; the text card stays hidden until set), `NEWS_FEEDS` and
+`NEWS_MINUTES` (see below).
+
+### News feeds
+
+`NEWS_FEEDS` is one line of JSON, `[{"name":"NPR","url":"https://feeds.npr.org/1001/rss.xml"}]`
+(up to 12 feeds). Unset or empty hides the News tab. The server fetches every feed every
+`NEWS_MINUTES` (10, minimum 5), reads RSS 2.0, RSS 1.0 and Atom, turns titles into plain text,
+drops repeated headlines and keeps the newest 60. The frame shows the headline, the feed's `name`
+and how long ago it was published; links are not sent to the frame.
+
+Feeds that worked when this was written (October 2026):
+
+| Name | URL |
+| --- | --- |
+| NPR News | `https://feeds.npr.org/1001/rss.xml` |
+| BBC World | `https://feeds.bbci.co.uk/news/world/rss.xml` |
+| Hacker News | `https://hnrss.org/frontpage` |
+| Ars Technica | `https://feeds.arstechnica.com/arstechnica/index` |
+| The Verge | `https://www.theverge.com/rss/index.xml` |
+
+AP has no public RSS feed any more (`apnews.com/index.rss` answers 401), and the third-party AP
+mirrors tried were weeks out of date; NPR and BBC are the dependable general-news choices. If a
+feed fails, the News tab names it and the reason under the list.
 
 ## 3. Point the frame at it
 
@@ -137,6 +204,7 @@ The page is plain ES5 and old-style CSS because the frame's stock WebView is Chr
 step, no framework, no CSS variables or grid. `test/frontend.test.js` fails if newer syntax creeps in.
 Times on the page come from the server, not the frame, whose clock and time zone are unreliable.
 
-API, for scripts and phones: `GET /api/events`, `GET /api/weather` (with `days[].hours`),
+API, for scripts and phones: `GET /api/events` (optionally `?from=YYYY-MM-DD&days=1..14`, within
+30 days back and 90 ahead), `GET /api/news` (404 `NOT_CONFIGURED` when unset), `GET /api/weather` (with `days[].hours`),
 `GET /api/text` (404 `NOT_CONFIGURED` when unset), `GET /api/state`,
 `POST /api/ack {"key"}`, `POST /api/pomodoro {"settings"?, "run"?}`.

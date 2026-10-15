@@ -11,11 +11,31 @@
   <div class="stage">
     <section class="col col-agenda">
       <header class="col-head">
-        <h2>Agenda</h2>
+        <h2 id="agendaLabel">Agenda</h2>
+        <div class="seg hidden" id="seg" role="tablist">
+          <button class="is-on" data-tab="agenda" role="tab">Agenda</button><button data-tab="news" role="tab">News</button>
+        </div>
         <div class="legend" id="legend"></div>
       </header>
-      <div class="agenda" id="agenda"><p class="empty">Loading calendars…</p></div>
-      <div class="status" id="calStatus"></div>
+
+      <div class="pane" id="agendaPane">
+        <div class="panel">
+          <div class="agenda-nav">
+            <button class="nav-btn" id="dayPrev" aria-label="Previous day"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+            <button class="nav-day" id="dayLabel" aria-label="Back to today"></button>
+            <button class="nav-btn" id="dayNext" aria-label="Next day"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+          </div>
+          <div class="agenda" id="agenda"><p class="empty">Loading calendars…</p></div>
+        </div>
+        <div class="status" id="calStatus"></div>
+      </div>
+
+      <div class="pane hidden" id="newsPane">
+        <div class="panel">
+          <div class="news" id="news"><p class="empty">Loading headlines…</p></div>
+        </div>
+        <div class="status" id="newsStatus"></div>
+      </div>
     </section>
 
     <section class="col col-now">

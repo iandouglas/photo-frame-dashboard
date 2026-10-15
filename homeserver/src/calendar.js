@@ -43,22 +43,34 @@ function compileExclude(list) {
 }
 
 /**
- * Expand one feed's text into occurrences overlapping [fromMs, toMs).
- * cal: { id, email?, exclude?: [regex strings], busyOnly?: bool }
+ * Parse one feed's text once. The result can be expanded into any number of ranges with
+ * expandParsed(), so the server keeps it and serves other dates without refetching.
  */
-export function expandFeed(text, cal, fromMs, toMs, tz) {
+export function parseFeed(text) {
   const root = new ICAL.Component(ICAL.parse(text));
-  const vevents = root.getAllSubcomponents('vevent');
-  const exclude = compileExclude(cal.exclude);
-
   const masters = new Map();
   const exceptions = [];
-  for (const ve of vevents) {
+  for (const ve of root.getAllSubcomponents('vevent')) {
     const uid = ve.getFirstPropertyValue('uid');
     if (!uid) continue;
     if (ve.hasProperty('recurrence-id')) exceptions.push(ve);
     else masters.set(uid, ve);
   }
+  return { masters, exceptions };
+}
+
+/**
+ * Expand one feed's text into occurrences overlapping [fromMs, toMs).
+ * cal: { id, email?, exclude?: [regex strings], busyOnly?: bool }
+ */
+export function expandFeed(text, cal, fromMs, toMs, tz) {
+  return expandParsed(parseFeed(text), cal, fromMs, toMs, tz);
+}
+
+/** Expand a parseFeed() result into occurrences overlapping [fromMs, toMs). */
+export function expandParsed(parsed, cal, fromMs, toMs, tz) {
+  const { masters, exceptions } = parsed;
+  const exclude = compileExclude(cal.exclude);
 
   const out = [];
   const push = (component, start, end, uid) => {

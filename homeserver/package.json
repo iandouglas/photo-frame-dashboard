@@ -5,12 +5,15 @@
   "description": "Self-hosted LAN dashboard for the PF1007 frame: Google Calendar iCal feeds, Open-Meteo weather, pomodoro, meeting alerts.",
   "type": "module",
   "main": "src/server.js",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "fast-xml-parser": "5.11.1",
     "ical.js": "2.2.1"
   },
   "devDependencies": {
