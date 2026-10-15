@@ -33,6 +33,10 @@ services:
       # Optional News tab: JSON [{"name","url"}] of RSS/Atom feeds (see .env.example)
       NEWS_FEEDS: ${NEWS_FEEDS:-}
       NEWS_MINUTES: ${NEWS_MINUTES:-10}
+      # Optional night schedule, e.g. 22:30 and 06:30 (both empty = none)
+      SCREEN_OFF_FROM: ${SCREEN_OFF_FROM:-}
+      SCREEN_OFF_TO: ${SCREEN_OFF_TO:-}
+      WAKE_MINUTES: ${WAKE_MINUTES:-2}
     volumes:
       - frame-data:/data
 

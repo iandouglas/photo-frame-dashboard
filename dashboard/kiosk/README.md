@@ -99,6 +99,30 @@ To build your own dashboard for a PF1007L frame, see
 [building-for-the-frame.md](../../docs/building-for-the-frame.md): what WebView 106 supports,
 what to avoid, and how to test on the frame.
 
+## Screen off and Settings from the page (`window.HomeHQ`)
+
+The kiosk gives the dashboard page a small JavaScript bridge, `window.HomeHQ`:
+
+| Call | Does |
+| --- | --- |
+| `openSettings()` | Opens Android Settings (useful on frames with no navigation bar) |
+| `screenOff()` | Turns the backlight off and covers the page with black. The first touch turns it back on and is swallowed, so it can't press anything on the page; the page is then told through `window.onHomeHQScreen(false)` |
+| `screenOn()` | Turns it back on |
+| `isScreenOff()` | `true` while off |
+| `lightLevel()` | Last ambient light reading in lux, or `-1` (the sensor starts on the first call) |
+
+Only the saved dashboard URL's origin (scheme, host and port) can use it. Any other page the
+kiosk shows, such as a link opened from another app, gets no effect from these calls.
+
+**Screen off uses root.** On the PF1007L the backlight is the Allwinner display driver's
+`/sys/class/disp/disp/attr/lcdbl` (0 to 255). The kiosk reads the current level (the file is
+world-readable), then runs the frame's setuid `/system/xbin/su` with a fixed command,
+`echo 0 > /sys/class/disp/disp/attr/lcdbl`, and later writes the saved level back the same way.
+Nothing from the page is passed to the shell. On a frame without `su` or that file, it falls back
+to window brightness 0 under the same black cover, which dims rather than switches off the
+backlight. The kiosk keeps the screen awake as before (`FLAG_KEEP_SCREEN_ON`); leaving the app or
+closing it restores the backlight.
+
 ## When the dashboard can't load
 
 If the dashboard fails to load, Home HQ covers WebView's error page with its own

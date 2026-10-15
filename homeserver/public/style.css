@@ -329,6 +329,35 @@ h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #
 .wx-day { cursor: pointer; }
 .wx-day:active { background: #F2EEE6; }
 
+/* ---------------------------------------------------------------- screen controls */
+.tool-bar {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: flex-end;
+  justify-content: flex-end;
+  -webkit-flex: none;
+  flex: none;
+  height: 56px;
+  margin-bottom: 12px;
+}
+.tool-btn {
+  width: 56px;
+  height: 56px;
+  margin-left: 12px;
+  border-radius: 14px;
+  background: #FBF9F4;
+  color: #3B3934;
+  padding-top: 4px;
+}
+.tool-btn:active { background: #E8E2D5; }
+/* Screen off without the kiosk bridge (a plain browser): black page until the next touch. */
+.blackout {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 30;
+  background: #000000;
+}
+
 /* ---------------------------------------------------------------- cards */
 .card {
   background: #FBF9F4;

@@ -60,6 +60,26 @@ export function parseCalendars(json) {
   });
 }
 
+/**
+ * Overnight screen-off window, local "HH:MM" times. Both unset = no schedule; a window may cross
+ * midnight (22:30 to 06:30). wakeMin: how long a touch keeps the screen on during the window.
+ */
+export function parseScreen(from, to, wake) {
+  const hhmm = (name, v) => {
+    const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(v).trim());
+    if (!m) throw new Error(`${name} must be HH:MM (24-hour), e.g. 22:30`);
+    return m[1] + ':' + m[2];
+  };
+  const wakeMin = wake == null || wake === '' ? 2 : Number(wake);
+  if (!Number.isFinite(wakeMin) || wakeMin < 1 || wakeMin > 120) throw new Error('WAKE_MINUTES must be a number from 1 to 120');
+  const hasFrom = from != null && from !== '', hasTo = to != null && to !== '';
+  if (hasFrom !== hasTo) throw new Error('Set both SCREEN_OFF_FROM and SCREEN_OFF_TO, or neither');
+  if (!hasFrom) return { from: null, to: null, wakeMin };
+  const f = hhmm('SCREEN_OFF_FROM', from), t = hhmm('SCREEN_OFF_TO', to);
+  if (f === t) throw new Error('SCREEN_OFF_FROM and SCREEN_OFF_TO must differ');
+  return { from: f, to: t, wakeMin };
+}
+
 /** Optional plain-text card. Unset URL = card hidden. */
 export function parseTextFeed(url, title) {
   if (!url) return null;
@@ -106,5 +126,6 @@ export function loadConfig() {
     textFeed: parseTextFeed(process.env.TEXT_FEED_URL, process.env.TEXT_FEED_TITLE),
     newsFeeds: parseNewsFeeds(process.env.NEWS_FEEDS),
     newsMinutes: num('NEWS_MINUTES', 10, 5, 1440),
+    screen: parseScreen(process.env.SCREEN_OFF_FROM, process.env.SCREEN_OFF_TO, process.env.WAKE_MINUTES),
   };
 }

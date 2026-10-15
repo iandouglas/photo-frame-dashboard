@@ -235,7 +235,7 @@ function timeInfo(now, from, to) {
 
 function stateBody(now) {
   const s = store.get();
-  return { now, pomodoro: s.pomodoro, acks: s.acks };
+  return { now, pomodoro: s.pomodoro, acks: s.acks, screen: cfg.screen };
 }
 
 async function serveStatic(res, pathname) {

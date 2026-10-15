@@ -18,8 +18,13 @@
     online: true, agendaMinute: -1, lastAlertKey: null, pomoDoneShown: null, editing: null,
     wxDay: null, wxTouched: 0, text: null,
     navDay: null, navData: null, navTouched: 0, // agenda day browsing (null = today)
-    news: null, newsOn: false, tab: savedTab(), clockHM: '', clockSec: '', clockAmPm: ''
+    news: null, newsOn: false, tab: savedTab(), clockHM: '', clockSec: '', clockAmPm: '',
+    flashing: false,
+    // Screen: cfg from /api/state; off = we turned it off; manual = the moon button did.
+    screen: { cfg: null, off: false, manual: false, wakeUntil: 0 }
   };
+  // The kiosk's bridge (window.HomeHQ) exists only inside the Home HQ app on the dashboard origin.
+  var bridge = typeof window.HomeHQ !== 'undefined' && window.HomeHQ ? window.HomeHQ : null;
   var token = (/[?&]token=([^&]+)/.exec(location.search) || [])[1] || '';
 
   function $(id) { return document.getElementById(id); }
@@ -128,6 +133,7 @@
     if (!d) return;
     S.pomodoro = d.pomodoro;
     S.acks = d.acks || {};
+    if (d.screen) S.screen.cfg = d.screen;
     if (!S.editing) renderPomodoro();
     renderAlert();
   }
@@ -431,19 +437,23 @@
       if (d && d.title) { $('textTitle').textContent = d.title; $('textTitle').className = 'card-label'; }
       if (err || !d || typeof d.text !== 'string') {
         // Keep the last text; just mark it as old.
-        if (S.text !== null) $('textBody').className = textClass(S.text) + ' is-stale';
+        if (S.text !== null) fitText(true);
         return;
       }
       card.className = 'card text-card';
-      var body = $('textBody');
-      if (d.text !== S.text) { S.text = d.text; body.textContent = d.text; }
-      body.className = textClass(d.text) + (d.stale ? ' is-stale' : '');
+      if (d.text !== S.text) { S.text = d.text; $('textBody').textContent = d.text; }
+      fitText(!!d.stale);
     });
   }
-  // Shrink the font for longer texts so they fit the card.
-  function textClass(t) {
-    var n = t.length;
-    return 'text-body' + (n > 360 ? ' is-xs' : n > 220 ? ' is-s' : n > 120 ? ' is-m' : '');
+  // Use the largest font size at which the text fits the card (the card's height depends on
+  // what is above it, so measure instead of guessing from the length).
+  var TEXT_SIZES = ['', ' is-m', ' is-s', ' is-xs'];
+  function fitText(stale) {
+    var body = $('textBody'), extra = stale ? ' is-stale' : '';
+    for (var i = 0; i < TEXT_SIZES.length; i++) {
+      body.className = 'text-body' + TEXT_SIZES[i] + extra;
+      if (body.scrollHeight <= body.clientHeight + 1) return;
+    }
   }
 
   // ------------------------------------------------------------ meeting alert
@@ -464,6 +474,7 @@
         fmtTime(e.start) + ' · ' + esc(calName(e.cal)) + '</div><div class="alert-count' + (a.phase === 'upcoming' ? ' is-later' : '') + '">' + count + '</div>';
     }
 
+    S.flashing = a.phase === 'flash';
     if (a.phase === 'flash') {
       $('flashWhen').textContent = a.msUntil > 0 ? 'in ' + fmtCountdown(a.msUntil) : 'started ' + Math.floor(-a.msUntil / MIN) + ' min ago';
       $('flashTitle').textContent = a.event.title;
@@ -477,6 +488,9 @@
 
   function ack() {
     if (!S.lastAlertKey) return;
+    // The ACK tap counts as a touch: stay on for the wake time, then the schedule resumes.
+    S.screen.manual = false;
+    S.screen.wakeUntil = Date.now() + wakeMs();
     S.acks[S.lastAlertKey] = now(); // hide at once; the server confirms
     renderAlert();
     request('POST', 'api/ack', { key: S.lastAlertKey }, function (err, d) { if (!err) applyState(d); });
@@ -567,6 +581,44 @@
     openSettings(false);
   }
 
+  // ------------------------------------------------------------ screen off / schedule
+  function wakeMs() { return ((S.screen.cfg && S.screen.cfg.wakeMin) || 2) * MIN; }
+
+  function setScreen(on) {
+    S.screen.off = !on;
+    if (bridge) {
+      if (on) bridge.screenOn(); else bridge.screenOff();
+    } else {
+      $('blackout').className = on ? 'blackout hidden' : 'blackout';
+    }
+  }
+
+  // Called by the kiosk after a touch woke the screen (and by the plain-browser black page).
+  function onWoke() {
+    S.screen.off = false;
+    S.screen.manual = false;
+    S.screen.wakeUntil = Date.now() + wakeMs();
+  }
+  window.onHomeHQScreen = function (off) { if (!off) onWoke(); };
+
+  function screenTick() {
+    // The kiosk may have woken the screen on its own (a touch); trust what it reports.
+    if (bridge && S.screen.off) {
+      try { if (!bridge.isScreenOff()) onWoke(); } catch (e) { /* bridge refused */ }
+    }
+    var w = wall(now());
+    var want = L.screenWanted({
+      minuteOfDay: w.getUTCHours() * 60 + w.getUTCMinutes(),
+      screen: S.screen.cfg,
+      now: Date.now(),
+      wakeUntil: S.screen.wakeUntil,
+      flashing: S.flashing,
+      manualOff: S.screen.manual
+    });
+    if (want === 'off' && !S.screen.off) setScreen(false);
+    else if (want === 'on' && S.screen.off) setScreen(true);
+  }
+
   // ------------------------------------------------------------ clock and tick
   function renderClock() {
     var t = now(), w = wall(t), h = w.getUTCHours();
@@ -584,6 +636,7 @@
   function tick() {
     renderClock();
     renderAlert();
+    screenTick();
     if (!S.editing) renderPomodoro();
     if (Math.floor(now() / MIN) !== S.agendaMinute) { renderAgenda(); updateNewsTimes(); }
     if (S.navDay !== null && Date.now() - S.navTouched > AGENDA_IDLE) goDay(dayNumber(now()));
@@ -601,6 +654,19 @@
   $('pomoGear').addEventListener('click', function () { openSettings(!S.editing); });
   $('pomoSettings').addEventListener('click', onSettingsTap);
   $('wxDays').addEventListener('click', onDaysTap);
+  if (bridge) {
+    $('btnSettings').className = 'tool-btn';
+    $('btnSettings').addEventListener('click', function () { bridge.openSettings(); });
+  }
+  $('btnSleep').addEventListener('click', function () { S.screen.manual = true; setScreen(false); });
+  // Plain browser: the black page swallows the waking tap (hidden on click, so the tap's own
+  // click can't land on a button underneath).
+  $('blackout').addEventListener('click', function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    $('blackout').className = 'blackout hidden';
+    onWoke();
+  });
   $('dayPrev').addEventListener('click', function () { stepDay(-1); });
   $('dayNext').addEventListener('click', function () { stepDay(1); });
   $('dayLabel').addEventListener('click', function () { goDay(dayNumber(now())); });

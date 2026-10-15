@@ -126,7 +126,41 @@
     return idleRun('work', 0);
   }
 
+  // ------------------------------------------------------------ screen schedule
+
+  /** "HH:MM" -> minutes after midnight, or null. */
+  function hhmmToMin(s) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(s || '');
+    if (!m || +m[1] > 23 || +m[2] > 59) return null;
+    return +m[1] * 60 + +m[2];
+  }
+
+  /** Is minute-of-day m inside [from, to)? Windows may cross midnight (from > to). */
+  function inWindow(m, from, to) {
+    if (from == null || to == null || from === to) return false;
+    return from < to ? m >= from && m < to : m >= from || m < to;
+  }
+
+  /**
+   * Should the screen be on or off right now?
+   *   minuteOfDay  local wall-clock minute (server zone)
+   *   screen       { from: "HH:MM"|null, to: "HH:MM"|null } from /api/state
+   *   now, wakeUntil  ms; a touch during the window keeps the screen on until wakeUntil
+   *   flashing     a meeting alert is flashing: always on, schedule or not
+   *   manualOff    the moon button was pressed (until the next touch)
+   */
+  function screenWanted(o) {
+    if (o.flashing) return 'on';
+    if (o.manualOff) return 'off';
+    var s = o.screen;
+    if (s && inWindow(o.minuteOfDay, hhmmToMin(s.from), hhmmToMin(s.to)) && o.now >= (o.wakeUntil || 0)) return 'off';
+    return 'on';
+  }
+
   root.Logic = {
+    hhmmToMin: hhmmToMin,
+    inWindow: inWindow,
+    screenWanted: screenWanted,
     alertKey: alertKey,
     alertState: alertState,
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
