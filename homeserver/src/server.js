@@ -8,6 +8,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { loadConfig } from './config.js';
 import { expandFeed, mergeEvents, publicCalendars } from './calendar.js';
 import { forecastUrl, mapForecast } from './weather.js';
+import { createTextFeed } from './textfeed.js';
 import { StateStore } from './state.js';
 import { offsetTable, startOfLocalDay } from './tz.js';
 
@@ -124,6 +125,10 @@ async function refreshWeather() {
   }
 }
 
+// ------------------------------------------------------------ text feed
+
+const textFeed = cfg.textFeed ? createTextFeed({ url: cfg.textFeed.url }) : null;
+
 // ------------------------------------------------------------ http
 
 function send(res, status, body, type) {
@@ -215,6 +220,16 @@ async function handle(req, res) {
 
   if (req.method === 'GET' && path === '/api/state') return send(res, 200, stateBody(now));
 
+  if (req.method === 'GET' && path === '/api/text') {
+    if (!textFeed) return send(res, 404, { error: 'NOT_CONFIGURED' });
+    const r = await textFeed.get();
+    if (r.error) {
+      log('text_feed_failed', { code: r.error });
+      return send(res, 502, { error: r.error, title: cfg.textFeed.title });
+    }
+    return send(res, 200, { ...r, title: cfg.textFeed.title });
+  }
+
   if (req.method === 'POST' && path.startsWith('/api/')) {
     if (!authorised(req, url)) return send(res, 401, { error: 'token required' });
     const body = await readBody(req);
@@ -237,7 +252,7 @@ const server = createServer((req, res) => {
 });
 
 server.listen(cfg.port, cfg.host, () => {
-  log('listening', { host: cfg.host, port: cfg.port, tz: cfg.tz, calendars: cfg.calendars.map((c) => c.id) });
+  log('listening', { host: cfg.host, port: cfg.port, tz: cfg.tz, calendars: cfg.calendars.map((c) => c.id), textFeed: !!textFeed });
 });
 
 refreshCalendars();

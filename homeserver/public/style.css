@@ -159,6 +159,63 @@ h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #
 .wx-day .range i { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: #FF9500; }
 .wx-day .hi { width: 42px; }
 
+/* Hourly view: replaces the 10-day list inside the same panel; only the list scrolls. */
+.wx-days.is-hourly {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  padding: 0 0 6px;
+}
+.wx-hhead {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-flex: none;
+  flex: none;
+  height: 52px;
+  padding-right: 18px;
+  border-bottom: 1px solid #D6CFC0;
+  font-size: 18px;
+}
+.wx-back {
+  width: 56px;
+  height: 52px;
+  padding-top: 4px;
+  color: #3B6FD8;
+  -webkit-flex: none;
+  flex: none;
+}
+.wx-back:active { background: #E8E2D5; }
+.wx-hhead b { font-weight: 600; margin-right: 8px; }
+.wx-hhead span { color: #7A756B; font-size: 15px; }
+.wx-hours {
+  -webkit-flex: 1;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 18px;
+}
+.wx-hours .empty { margin: 16px 0; }
+.wx-hour {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  height: 44px;
+  border-bottom: 1px solid #E8E2D5;
+  font-size: 18px;
+}
+.wx-hour:last-child { border-bottom: 0; }
+.wx-hour .h { width: 84px; }
+.wx-hour .i { width: 44px; color: #3B3934; }
+.wx-hour .p { -webkit-flex: 1; flex: 1; font-size: 14px; color: #3B6FD8; }
+.wx-hour .t { width: 52px; text-align: right; }
+.wx-day { cursor: pointer; }
+.wx-day:active { background: #F2EEE6; }
+
 /* ---------------------------------------------------------------- cards */
 .card {
   background: #FBF9F4;
@@ -189,6 +246,36 @@ h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #
 .alert-card.is-countdown { background: #FFF1D6; }
 .alert-card.is-countdown .alert-count { color: #C2410C; }
 .alert-card.is-acked .alert-count { color: #00A36C; }
+
+/* Plain-text feed: fills the rest of the right column. */
+.text-card {
+  -webkit-flex: 1;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+}
+.text-card.hidden { display: none; }
+.text-body {
+  -webkit-flex: 1;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  font-size: 26px;
+  line-height: 1.3;
+  color: #3B3934;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap; /* show the feed's text exactly as served, line breaks included */
+}
+.text-body.is-m { font-size: 22px; }
+.text-body.is-s { font-size: 19px; }
+.text-body.is-xs { font-size: 16px; }
+.text-body.is-stale { color: #7A756B; }
 
 /* ---------------------------------------------------------------- pomodoro */
 .pomo-phase { font-size: 20px; color: #3B3934; }

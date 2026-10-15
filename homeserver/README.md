@@ -13,13 +13,25 @@ container settings.
 | Column | Shows |
 | --- | --- |
 | Agenda | The next 14 days from all calendars, colour-coded. A meeting that is on two of your calendars appears once ("Work + Home"). Declined and cancelled events are hidden |
-| Now | Clock and date, current weather, sunrise and sunset, a 10-day forecast ([Open-Meteo](https://open-meteo.com/), no API key) |
-| Tools | **Next meeting** from the calendars marked `alert`, with a countdown from 15 minutes out. **Pomodoro** with start/pause, skip, reset and on-screen settings |
+| Now | Clock and date, current weather, sunrise and sunset, a 10-day forecast ([Open-Meteo](https://open-meteo.com/), no API key). Tap a day for its hourly forecast |
+| Tools | **Next meeting** from the calendars marked `alert`, with a countdown from 15 minutes out. **Pomodoro** with start/pause, skip, reset and on-screen settings. An optional **text card** (see `TEXT_FEED_URL`) |
 
 **Meeting alert:** 2 minutes before an event on an `alert` calendar, the whole screen flashes red
 until someone taps **ACK**. The ACK is saved on the server, so a reload or a second screen doesn't
 start flashing again. If nobody taps it, the flashing stops 10 minutes after the start. All three
 times are settings.
+
+**Hourly forecast:** tap a day in the 10-day list to see that day hour by hour (time, sky, chance
+of rain, temperature) in the same panel; scroll it with a finger. **‹** goes back, and so does a
+minute without touching the panel. A day the forecast has no hours for says *No hourly forecast yet*.
+
+**Text card:** set `TEXT_FEED_URL` to any address that returns plain text, for example
+`https://dadjokes736.com`, which returns a new dad joke on each request. The card under the pomodoro
+shows it exactly as served and refreshes every 15 seconds. The NAS fetches the text (never the
+frame), at most once every 10 seconds however many screens are open, accepts only `text/*`
+responses and keeps the first 2 KB. The frame shows it as text, so HTML in the response is
+displayed, not run. If the site is down, the last text stays up in grey. Leave the setting empty to hide the card;
+`TEXT_FEED_TITLE` adds a heading.
 
 **Pomodoro:** the timer runs on the server's clock, so it survives a kiosk reload, and you can
 start it from a phone browser on the same URL. When a phase ends, the card pulses for 8 seconds
@@ -82,7 +94,8 @@ Pomodoro settings and ACKs are kept in the `frame-data` volume.
 
 Other settings, all optional: `HOST_PORT` (8088), `TZ`, `LAT`/`LON`/`LOCATION_NAME` (no default; weather stays off until set),
 `UNITS` (`imperial` or `metric`), `REFRESH_MINUTES` (5), `EVENTS_DAYS` (14), `ALERT_LEAD_MIN` (2),
-`ALERT_COUNTDOWN_MIN` (15), `ALERT_GRACE_MIN` (10), `WRITE_TOKEN` (see below).
+`ALERT_COUNTDOWN_MIN` (15), `ALERT_GRACE_MIN` (10), `WRITE_TOKEN` (see below), `TEXT_FEED_URL`
+and `TEXT_FEED_TITLE` (no default; the text card stays hidden until set).
 
 ## 3. Point the frame at it
 
@@ -110,7 +123,7 @@ a curious guest, not real security: the token sits on the frame.
 ```sh
 cd homeserver
 npm install
-npm test        # calendar expansion, time zones, alert and pomodoro logic, old-WebView checks
+npm test        # calendars, time zones, weather, text feed, alert and pomodoro logic, old-WebView checks
 ```
 
 Run it against the synthetic test calendars (file URLs are only accepted with `ALLOW_FILE_FEEDS=1`):
@@ -124,5 +137,6 @@ The page is plain ES5 and old-style CSS because the frame's stock WebView is Chr
 step, no framework, no CSS variables or grid. `test/frontend.test.js` fails if newer syntax creeps in.
 Times on the page come from the server, not the frame, whose clock and time zone are unreliable.
 
-API, for scripts and phones: `GET /api/events`, `GET /api/weather`, `GET /api/state`,
+API, for scripts and phones: `GET /api/events`, `GET /api/weather` (with `days[].hours`),
+`GET /api/text` (404 `NOT_CONFIGURED` when unset), `GET /api/state`,
 `POST /api/ack {"key"}`, `POST /api/pomodoro {"settings"?, "run"?}`.

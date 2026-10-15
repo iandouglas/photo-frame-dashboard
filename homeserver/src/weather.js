@@ -1,4 +1,4 @@
-// Open-Meteo forecast (free, no key): current conditions, 10-day daily, sunrise/sunset.
+// Open-Meteo forecast (free, no key): current conditions, 10-day daily, sunrise/sunset, hourly.
 
 // WMO weather interpretation codes -> short label and icon name used by the frame.
 const WMO = {
@@ -45,6 +45,7 @@ export function forecastUrl(cfg) {
     longitude: String(cfg.lon),
     current: 'temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day',
     daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset',
+    hourly: 'temperature_2m,weather_code,precipitation_probability,is_day',
     timezone: cfg.tz,
     forecast_days: '10',
   });
@@ -60,6 +61,7 @@ export function forecastUrl(cfg) {
 export function mapForecast(raw, cfg) {
   const c = raw.current || {};
   const d = raw.daily || {};
+  const hours = groupHours(raw.hourly);
   const days = (d.time || []).map((date, i) => ({
     date,
     hi: round(d.temperature_2m_max && d.temperature_2m_max[i]),
@@ -68,6 +70,7 @@ export function mapForecast(raw, cfg) {
     sunrise: hhmm(d.sunrise && d.sunrise[i]),
     sunset: hhmm(d.sunset && d.sunset[i]),
     ...describe(d.weather_code && d.weather_code[i], 1),
+    hours: hours[date] || [],
   }));
   return {
     location: cfg.locationName,
@@ -81,6 +84,28 @@ export function mapForecast(raw, cfg) {
     },
     days,
   };
+}
+
+/**
+ * Hourly rows grouped by local date: { "2026-10-14": [{ t: "15:00", temp, pop, icon }] }.
+ * Open-Meteo returns local wall-clock times for the requested zone, so the date prefix is the
+ * local day even across DST changes (those days simply have 23 or 25 rows).
+ */
+export function groupHours(h) {
+  const out = {};
+  if (!h || !Array.isArray(h.time)) return out;
+  for (let i = 0; i < h.time.length; i++) {
+    const s = h.time[i];
+    if (typeof s !== 'string' || s.length < 16) continue;
+    const date = s.slice(0, 10);
+    (out[date] || (out[date] = [])).push({
+      t: s.slice(11, 16),
+      temp: round(h.temperature_2m && h.temperature_2m[i]),
+      pop: h.precipitation_probability ? h.precipitation_probability[i] : null,
+      icon: describe(h.weather_code && h.weather_code[i], h.is_day ? h.is_day[i] : 1).icon,
+    });
+  }
+  return out;
 }
 
 function round(v) {
